@@ -1,0 +1,241 @@
+:root {
+  --page-bg: #ffffff;
+  --header-bg: #dce7e8;
+  --text: #0f1720;
+  --muted: rgba(15,23,32,0.65);
+  --accent: #1e4fd6;
+  --accent-strong: #1641b3;
+  --control-border: rgba(15,23,32,0.08);
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  background-color: var(--page-bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.container {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 12px;
+  background: var(--header-bg);
+  border-bottom: 1px solid var(--control-border);
+  color: var(--text);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo .mark {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  background: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  color: var(--accent-strong);
+  border: 1px solid var(--control-border);
+}
+
+.site-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.btn {
+  display: inline-block;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: transparent;
+  border: 1px solid rgba(15,23,32,0.08);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.25s ease-in-out;
+}
+
+.btn-primary {
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  border: none;
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(30,79,214,0.12);
+}
+
+.btn-large {
+  padding: 14px 22px;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* Анимация для кнопок Главная и Загрузить файл */
+.btn-primary, .btn.home-btn {
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+.btn-primary:hover, .btn.home-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 10px 20px rgba(30,79,214,0.2);
+  filter: brightness(1.05);
+}
+
+/* Home section */
+.home {
+  text-align: center;
+  padding-top: 60px;
+}
+
+.h1 {
+  font-size: 28px;
+  margin-bottom: 10px;
+  color: var(--text);
+}
+
+.lead {
+  color: var(--muted);
+  max-width: 700px;
+  margin: 0 auto 20px;
+}
+
+/* Auth card */
+.auth-card {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  max-width: 420px;
+  margin: 40px auto;
+  border: 1px solid var(--control-border);
+  color: var(--text);
+}
+
+.tabs { display:flex; gap:6px; margin-bottom:12px; }
+
+.tab {
+  flex: 1;
+  padding: 8px;
+  text-align: center;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid rgba(15,23,32,0.06);
+  background: transparent;
+  color: var(--text);
+}
+
+.tab.active { background: rgba(15,23,32,0.04); }
+
+.dropzone {
+  border: 2px dashed rgba(15,23,32,0.06);
+  padding: 40px;
+  border-radius: 12px;
+  text-align: center;
+  color: var(--muted);
+  background: #fff;
+}
+
+.file-input { display: none; }
+
+.file-btn {
+  display: inline-block;
+  margin-top: 12px;
+  padding: 14px 22px;
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(30,79,214,0.12);
+  font-size: 16px;
+  font-weight: 600;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+.file-btn:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 10px 20px rgba(30,79,214,0.2);
+  filter: brightness(1.05);
+}
+
+.file-btn.secondary {
+  background: transparent;
+  border: 1px solid rgba(15,23,32,0.06);
+  color: var(--text);
+  box-shadow: none;
+  padding: 12px 18px;
+}
+
+.analysis {
+  max-width: 800px;
+  margin: 40px auto;
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  border: 1px solid var(--control-border);
+}
+
+.upload-card {
+  background: #ffffff;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid rgba(15,23,32,0.06);
+  color: var(--text);
+}
+
+.upload-title {
+  margin: 0 0 8px 0;
+  font-size: 22px;
+  color: var(--text);
+}
+
+.upload-desc {
+  margin: 0 0 18px 0;
+  color: var(--muted);
+}
+
+.thumb {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid rgba(15,23,32,0.06);
+}
+
+.upload-meta { display:flex; align-items:center; }
+
+.input {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(15,23,32,0.06);
+  font-size: 14px;
+}
+
+.btn:focus, .file-btn:focus, .tab:focus { 
+  outline: 3px solid rgba(30,79,214,0.12); 
+  outline-offset: 2px; 
+}
+
