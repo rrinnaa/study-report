@@ -10,7 +10,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
   const navigate = useNavigate();
 
   return (
-    <header style={{ position: 'relative', height: 72, background: 'midnightblue', color: 'white' }}>
+    <header style={{ position: 'relative', height: 72, background: '#000000', color: 'white' }}>
       <div style={{ position: 'absolute', left: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
         <div style={{ width: 44, height: 44, borderRadius: 8, background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700 }}>
           OR
@@ -25,7 +25,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
         <button style={btnStyle} onClick={() => navigate('/')}>Главная</button>
         {isLoggedIn && <button style={btnStyle} onClick={() => navigate('/upload')}>Загрузить</button>}
         {!isLoggedIn ? (
-          <button style={{ ...btnStyle, background: '#2563eb', color: '#fff', border: 'none' }} onClick={() => navigate('/auth')}>
+          <button style={btnStyle} onClick={() =>  navigate('/auth')}>
             Вход / Регистрация
           </button>
         ) : (

@@ -3,8 +3,8 @@
   --header-bg: #dce7e8;
   --text: #0f1720;
   --muted: rgba(15,23,32,0.65);
-  --accent: #1e4fd6;
-  --accent-strong: #1641b3;
+  --accent: #000000;          
+  --accent-strong: #000000;  
   --control-border: rgba(15,23,32,0.08);
 }
 
@@ -90,7 +90,6 @@ a {
   font-weight: 600;
 }
 
-/* Анимация для кнопок Главная и Загрузить файл */
 .btn-primary, .btn.home-btn {
   transition: transform 0.25s ease, box-shadow 0.25s ease, filter 0.25s ease;
 }
@@ -101,7 +100,6 @@ a {
   filter: brightness(1.05);
 }
 
-/* Home section */
 .home {
   text-align: center;
   padding-top: 60px;
@@ -119,7 +117,6 @@ a {
   margin: 0 auto 20px;
 }
 
-/* Auth card */
 .auth-card {
   background: #ffffff;
   padding: 20px;

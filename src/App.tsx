@@ -23,6 +23,10 @@ export default function App() {
           path="/upload"
           element={isLoggedIn ? <Upload /> : <Navigate to="/auth" replace />}
         />
+        <Route
+          path="/analysis"
+          element={isLoggedIn ? <Analysis /> : <Navigate to="/auth" replace />}
+        />
         <Route path="/auth" element={<Auth setIsLoggedIn={setIsLoggedIn} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
