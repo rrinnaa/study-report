@@ -14,7 +14,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
 
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
-
+        
         if request.method == "OPTIONS" or any(path.startswith(p) for p in self.public_paths):
             return await call_next(request)
 
@@ -25,7 +25,12 @@ class JWTMiddleware(BaseHTTPMiddleware):
         token = auth_header.split(" ")[1]
         try:
             payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-            request.state.user = payload 
+            
+            request.state.user = {
+                "user_id": payload.get("user_id"),
+                "sub": payload.get("sub"),
+                "email": payload.get("email")
+            }
         except JWTError as e:
             logger.warning(f"JWT Error: {e}")
             return JSONResponse(status_code=401, content={"detail": "Невалидный или просроченный токен"})

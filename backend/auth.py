@@ -25,6 +25,12 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class UserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+
 class UserResponse(BaseModel):
     id: int
     first_name: str
@@ -81,18 +87,33 @@ def get_profile(request: Request, db: Session = Depends(get_db)):
     return UserResponse.from_orm(user)
 
 @router.put("/profile")
-def update_profile(request: Request, user_update: UserCreate, db: Session = Depends(get_db)):
+def update_profile(request: Request, user_update: UserUpdate, db: Session = Depends(get_db)):
     payload = request.state.user
     user = db.query(User).filter(User.email == payload.get("sub")).first()
     if not user:
         raise HTTPException(status_code=404, detail="Пользователь не найден")
-    user.first_name = user_update.first_name
-    user.last_name = user_update.last_name
-    user.email = user_update.email
+    
+    if user_update.first_name is not None:
+        user.first_name = user_update.first_name
+    if user_update.last_name is not None:
+        user.last_name = user_update.last_name
+    if user_update.email is not None:
+        existing_user = db.query(User).filter(
+            User.email == user_update.email, 
+            User.id != user.id
+        ).first()
+        if existing_user:
+            raise HTTPException(status_code=400, detail="Email уже используется")
+        user.email = user_update.email
+    
     if user_update.password:
         if not validate_password_policy(user_update.password):
-            raise HTTPException(status_code=400, detail="Пароль не соответствует требованиям безопасности")
+            raise HTTPException(
+                status_code=400, 
+                detail="Пароль должен содержать минимум 6 символов, одну заглавную букву и одну цифру"
+            )
         user.hashed_password = get_password_hash(user_update.password)
+    
     db.commit()
     db.refresh(user)
     return UserResponse.from_orm(user)

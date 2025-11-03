@@ -5,6 +5,8 @@ import Home from './pages/Home'
 import Auth from './pages/Auth'
 import Upload from './pages/Upload'
 import Analysis from './pages/Analysis'
+import MyUploads from './pages/MyUploads'
+import EditProfile from './pages/EditProfile';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -27,8 +29,14 @@ export default function App() {
           path="/analysis"
           element={isLoggedIn ? <Analysis /> : <Navigate to="/auth" replace />}
         />
+        <Route
+          path="/my-uploads"
+          element={isLoggedIn ? <MyUploads /> : <Navigate to="/auth" replace />}
+        />
         <Route path="/auth" element={<Auth setIsLoggedIn={setIsLoggedIn} />} />
         <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="/edit-profile" element={isLoggedIn ? <EditProfile /> : <Navigate to="/auth" replace />}
+        />
       </Routes>
     </>
   );

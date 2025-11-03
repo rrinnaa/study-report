@@ -27,8 +27,6 @@ app.add_middleware(
         "/api/login",
         "/api/register",
         "/api/health",
-        "/docs",
-        "/openapi.json"
     ]
 )
 

@@ -36,13 +36,10 @@ interface AnalysisResult {
   structureDetails: StructureDetails
 }
 
-type FilterType = 'all' | 'required' | 'optional'
-
 export default function Analysis() {
   const navigate = useNavigate()
   const [result, setResult] = useState<AnalysisResult | null>(null)
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<FilterType>('all')
 
   useEffect(() => {
     const savedResult = sessionStorage.getItem('analysis_result')
@@ -83,25 +80,16 @@ export default function Analysis() {
     return icons[workType] || '📄'
   }
 
-  const filteredSections = result?.sectionsFound.filter(section => {
-    if (filter === 'all') return true
-    if (filter === 'required') return !section.optional
-    if (filter === 'optional') return section.optional
-    return true
-  }) || []
-
   if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>🔍 Загружаем результаты анализа...</div>
   if (!result) return <div>Ошибка загрузки анализа</div>
 
   return (
     <div className="analysis" style={{ padding: '16px' }}>
-      {/* Верхняя панель */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
         <h2>Результаты анализа</h2>
         <button className="btn" onClick={handleNewAnalysis}>📊 Новый анализ</button>
       </div>
 
-      {/* Основная информация */}
       <div style={{
         background: result.isValid ? '#f0f9ff' : '#fff5f5',
         border: `1px solid ${result.isValid ? '#bae6fd' : '#fed7d7'}`,
@@ -142,9 +130,8 @@ export default function Analysis() {
         </div>
       </div>
 
-      {/* Разделы */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '10px', marginTop: '16px' }}>
-        {filteredSections.map((section, i) => (
+        {result.sectionsFound.map((section, i) => (
           <div key={i} style={{
             padding: '12px',
             background: section.found ? (section.optional ? '#f0f9ff' : '#f0fdf4') : (section.optional ? '#fffbeb' : '#fef2f2'),
@@ -169,7 +156,6 @@ export default function Analysis() {
         ))}
       </div>
 
-      {/* Ошибки */}
       {result.errors.length > 0 && (
         <div style={{ marginTop: '24px' }}>
           <h4 style={{ color: '#dc2626' }}>❌ Критические ошибки ({result.errors.length}):</h4>
@@ -183,7 +169,6 @@ export default function Analysis() {
         </div>
       )}
 
-      {/* Предупреждения */}
       {result.warnings.length > 0 && (
         <div style={{ marginTop: '16px' }}>
           <h4 style={{ color: '#d97706' }}>⚠️ Предупреждения ({result.warnings.length}):</h4>
@@ -197,7 +182,6 @@ export default function Analysis() {
         </div>
       )}
 
-      {/* Рекомендации */}
       {result.recommendations.length > 0 && (
         <div style={{ marginTop: '16px' }}>
           <h4 style={{ color: '#2563eb' }}>💡 Рекомендации ({result.recommendations.length}):</h4>
@@ -211,7 +195,6 @@ export default function Analysis() {
         </div>
       )}
 
-      {/* Общий вердикт */}
       <div style={{ marginTop: '24px', padding: '20px', background: result.isValid ? '#f0fdf4' : '#fef2f2', border: `2px solid ${result.isValid ? '#059669' : '#dc2626'}`, borderRadius: '12px', textAlign: 'center' }}>
         <div style={{ fontWeight: 600, fontSize: '20px', color: result.isValid ? '#059669' : '#dc2626', marginBottom: '8px' }}>
           {result.isValid ? '✅ Структура соответствует требованиям' : '❌ Структура требует доработки'}
@@ -231,4 +214,3 @@ export default function Analysis() {
     </div>
   )
 }
-

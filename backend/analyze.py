@@ -1,8 +1,10 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
-import re, traceback, logging
+import re, logging
 from io import BytesIO
 import PyPDF2, docx
 from .database import get_db
+from .database import Analysis
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/api", tags=["Analyzer"])
 logger = logging.getLogger("analyzer")
@@ -165,8 +167,7 @@ def detect_work_type(filename: str, content: str) -> str:
     for work_type, keywords in mapping.items():
         if any(k in filename_lower for k in keywords) or any(re.search(k, content_lower) for k in keywords):
             return work_type
-    
-    # fallback by length
+
     length = len(content)
     if length > 30000: return 'thesis'
     elif length > 15000: return 'course_work'
@@ -229,7 +230,6 @@ def analyze_work_structure(content: str, filename: str, work_type: str = None) -
     }
     return analysis_result
 
-# ---------------------- SPECIFIC RULES ----------------------
 def analyze_specific_rules(content: str, analysis_result: dict, work_type: str):
     content_lower = content.lower()
     if work_type == 'lab_report':
@@ -263,38 +263,191 @@ def calculate_bonus(content: str, work_type: str) -> int:
     return bonus
 
 @router.post("/analyze")
-async def analyze_file(request: Request, file: UploadFile = File(...), work_type: str = None, db = Depends(get_db)):
+async def analyze_file(
+    request: Request,
+    file: UploadFile = File(...),
+    work_type: str = None,
+    db: Session = Depends(get_db)
+):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
     try:
-        logger.info(f"User {user.get('sub')} is analyzing file: {file.filename}, type: {work_type}")
+        logger.info(f"User {user.get('user_id')} is analyzing file: {file.filename}")
+
+        if not file.filename:
+            raise HTTPException(status_code=400, detail="Имя файла не указано")
+
         content = await file.read()
-        filename = file.filename or ""
-        file_type = file.content_type or ""
+        filename = file.filename
+        file_content_type = file.content_type or ""
         text_content = ""
-        if file_type == 'application/pdf' or filename.lower().endswith('.pdf'):
+
+        if file_content_type == 'application/pdf' or filename.lower().endswith('.pdf'):
             text_content = extract_text_from_pdf(content)
-        elif file_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/msword'] or filename.lower().endswith(('.doc', '.docx')):
+        elif file_content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/msword'] or filename.lower().endswith(('.doc', '.docx')):
             text_content = extract_text_from_docx(content)
-        elif file_type == 'text/plain' or filename.lower().endswith('.txt'):
+        elif file_content_type == 'text/plain' or filename.lower().endswith('.txt'):
             text_content = extract_text_from_txt(content)
         else:
-            return {
-                'fileName': filename, 'fileType': 'unsupported', 'workType': 'Не определен', 'isValid': False,
-                'score': 0, 'sectionsFound': [], 'sectionsMissing': [], 'errors': ['Формат файла не поддерживается'],
-                'warnings': [], 'recommendations': ['Загрузите PDF, DOCX или TXT'], 'structureDetails': {}
-            }
+            analysis_record = Analysis(
+                user_id=user.get("user_id"),
+                filename=filename,
+                score=0,
+                full_result={
+                    'fileName': filename,
+                    'score': 0,
+                    'status': 'unsupported_format',
+                    'isValid': False,
+                    'workType': 'Не определен',
+                    'fileType': 'unsupported',
+                    'detectedType': 'unknown',
+                    'sectionsFound': [],
+                    'sectionsMissing': [],
+                    'errors': ['Формат файла не поддерживается'],
+                    'warnings': [],
+                    'recommendations': ['Загрузите PDF, DOCX или TXT'],
+                    'structureDetails': {
+                        'totalSectionsChecked': 0,
+                        'requiredSectionsFound': 0,
+                        'totalRequiredSections': 0,
+                        'contentLength': 0,
+                        'detectionConfidence': 'low'
+                    }
+                }
+            )
+            
+            db.add(analysis_record)
+            db.commit()
+            
+            return analysis_record.full_result
+
         if not text_content.strip():
-            return {
-                'fileName': filename, 'fileType': 'empty', 'workType': 'Не определен', 'isValid': False,
-                'score': 0, 'sectionsFound': [], 'sectionsMissing': [], 'errors': ['Не удалось извлечь текст из файла'],
-                'warnings': [], 'recommendations': ['Файл должен содержать текст'], 'structureDetails': {}
-            }
+            analysis_record = Analysis(
+                user_id=user.get("user_id"),
+                filename=filename,
+                score=0,
+                full_result={
+                    'fileName': filename,
+                    'score': 0,
+                    'status': 'empty_file',
+                    'isValid': False,
+                    'workType': 'Не определен',
+                    'fileType': 'empty',
+                    'detectedType': 'unknown',
+                    'sectionsFound': [],
+                    'sectionsMissing': [],
+                    'errors': ['Не удалось извлечь текст из файла'],
+                    'warnings': [],
+                    'recommendations': ['Файл должен содержать текст'],
+                    'structureDetails': {
+                        'totalSectionsChecked': 0,
+                        'requiredSectionsFound': 0,
+                        'totalRequiredSections': 0,
+                        'contentLength': 0,
+                        'detectionConfidence': 'low'
+                    }
+                }
+            )
+            
+            db.add(analysis_record)
+            db.commit()
+            
+            return analysis_record.full_result
+
         analysis_result = analyze_work_structure(text_content, filename, work_type)
-        logger.info(f"Analysis completed for {filename}. Score: {analysis_result['score']}%")
+        score = analysis_result.get('score', 0)
+
+        analysis_record = Analysis(
+            user_id=user.get("user_id"),
+            filename=filename,
+            score=score,
+            full_result=analysis_result
+        )
+
+        db.add(analysis_record)
+        db.commit()
+        db.refresh(analysis_record)
+
         return analysis_result
+
     except Exception as e:
-        logger.error(f"Error analyzing file {file.filename}: {e}")
-        traceback.print_exc()
+        logger.error(f"Error analyzing file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при анализе файла: {str(e)}")
+    
+@router.get("/my-uploads")
+def get_my_uploads(
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
+    user_id = user.get("user_id")
+    uploads = db.query(Analysis).filter(Analysis.user_id == user_id).order_by(Analysis.created_at.desc()).all()
+
+    response = []
+    for upload in uploads:
+        response.append({
+            "id": upload.id,
+            "filename": upload.filename,
+            "score": upload.score,
+            "created_at": upload.created_at.isoformat() if upload.created_at else None
+        })
+    
+    return response
+
+@router.delete("/upload/{upload_id}")
+def delete_upload(
+    upload_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
+    user_id = user.get("user_id")
+    
+    upload = db.query(Analysis).filter(
+        Analysis.id == upload_id,
+        Analysis.user_id == user_id
+    ).first()
+    
+    if not upload:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    
+    try:
+        db.delete(upload)
+        db.commit()
+        return {"message": "Запись успешно удалена"}
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting upload {upload_id}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка при удалении записи")
+
+@router.get("/upload/{upload_id}/details")
+def get_upload_details(
+    upload_id: int,
+    request: Request,
+    db: Session = Depends(get_db)
+):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
+    user_id = user.get("user_id")
+    upload = db.query(Analysis).filter(
+        Analysis.id == upload_id,
+        Analysis.user_id == user_id
+    ).first()
+    
+    if not upload:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    
+    if not upload.full_result:
+        raise HTTPException(status_code=404, detail="Детали анализа не найдены")
+    
+    return upload.full_result

@@ -5,19 +5,6 @@ interface AuthProps {
   setIsLoggedIn: React.Dispatch<React.SetStateAction<boolean>>
 }
 
-interface User {
-  id: number
-  first_name: string
-  last_name: string
-  email: string
-}
-
-interface AuthResponse {
-  access_token: string
-  token_type: string
-  user: User
-}
-
 export default function Auth({ setIsLoggedIn }: AuthProps) {
   const [tab, setTab] = useState<'login' | 'register'>('login')
   const [login, setLogin] = useState({ email: '', password: '' })
