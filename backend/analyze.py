@@ -5,6 +5,8 @@ import PyPDF2, docx
 from .database import get_db
 from .database import Analysis
 from sqlalchemy.orm import Session
+from .ocr_service import ocr_service
+from PIL import Image
 
 router = APIRouter(prefix="/api", tags=["Analyzer"])
 logger = logging.getLogger("analyzer")
@@ -153,6 +155,25 @@ def extract_text_from_txt(file_content: bytes) -> str:
             continue
     return ""
 
+def extract_text_from_image(file_content: bytes) -> str:
+    """Извлекает текст из изображения с помощью OCR"""
+    try:
+        image = Image.open(BytesIO(file_content))
+        image.verify()
+        
+        text = ocr_service.recognize_text(file_content)
+        
+        if text:
+            logger.info(f"Successfully extracted {len(text)} chars from image")
+        else:
+            logger.warning("No text found in image")
+            
+        return text
+        
+    except Exception as e:
+        logger.error(f"Image extraction error: {e}")
+        return ""
+
 def detect_work_type(filename: str, content: str) -> str:
     filename_lower = filename.lower()
     content_lower = content.lower()
@@ -290,6 +311,49 @@ async def analyze_file(
             text_content = extract_text_from_docx(content)
         elif file_content_type == 'text/plain' or filename.lower().endswith('.txt'):
             text_content = extract_text_from_txt(content)
+        
+        elif file_content_type.startswith('image/') or filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')):
+            text_content = extract_text_from_image(content)
+            
+            if not text_content.strip():
+                analysis_record = Analysis(
+                    user_id=user.get("user_id"),
+                    filename=filename,
+                    score=0,
+                    full_result={
+                        'fileName': filename,
+                        'score': 0,
+                        'status': 'no_text_in_image',
+                        'isValid': False,
+                        'workType': 'Не определен',
+                        'fileType': 'image',
+                        'detectedType': 'unknown',
+                        'sectionsFound': [],
+                        'sectionsMissing': [],
+                        'errors': ['Не удалось распознать текст на изображении'],
+                        'warnings': [
+                            'Убедитесь, что изображение четкое',
+                            'Текст должен быть хорошо виден', 
+                            'Попробуйте сделать фото при хорошем освещении'
+                        ],
+                        'recommendations': [
+                            'Используйте скриншоты вместо фото документов',
+                            'Убедитесь что текст не размыт',
+                            'Попробуйте увеличить контрастность изображения'
+                        ],
+                        'structureDetails': {
+                            'totalSectionsChecked': 0,
+                            'requiredSectionsFound': 0,
+                            'totalRequiredSections': 0,
+                            'contentLength': 0,
+                            'detectionConfidence': 'low'
+                        }
+                    }
+                )
+                db.add(analysis_record)
+                db.commit()
+                return analysis_record.full_result
+
         else:
             analysis_record = Analysis(
                 user_id=user.get("user_id"),
@@ -307,7 +371,7 @@ async def analyze_file(
                     'sectionsMissing': [],
                     'errors': ['Формат файла не поддерживается'],
                     'warnings': [],
-                    'recommendations': ['Загрузите PDF, DOCX или TXT'],
+                    'recommendations': ['Загрузите PDF, DOCX, TXT или изображения (JPG, PNG, etc.)'],
                     'structureDetails': {
                         'totalSectionsChecked': 0,
                         'requiredSectionsFound': 0,
@@ -320,7 +384,6 @@ async def analyze_file(
             
             db.add(analysis_record)
             db.commit()
-            
             return analysis_record.full_result
 
         if not text_content.strip():
@@ -353,7 +416,6 @@ async def analyze_file(
             
             db.add(analysis_record)
             db.commit()
-            
             return analysis_record.full_result
 
         analysis_result = analyze_work_structure(text_content, filename, work_type)
@@ -451,3 +513,174 @@ def get_upload_details(
         raise HTTPException(status_code=404, detail="Детали анализа не найдены")
     
     return upload.full_result
+
+@router.post("/analyze-multiple")
+async def analyze_multiple_files(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    work_type: str = None,
+    db: Session = Depends(get_db)
+):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
+    try:
+        logger.info(f"User {user.get('user_id')} is analyzing {len(files)} files")
+
+        if not files:
+            raise HTTPException(status_code=400, detail="Файлы не указаны")
+
+        results = []
+        analysis_records = []
+
+        for file in files:
+            file_content = await file.read()
+            filename = file.filename
+            file_content_type = file.content_type or ""
+            text_content = ""
+
+            if file_content_type == 'application/pdf' or filename.lower().endswith('.pdf'):
+                text_content = extract_text_from_pdf(file_content)
+            elif file_content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/msword'] or filename.lower().endswith(('.doc', '.docx')):
+                text_content = extract_text_from_docx(file_content)
+            elif file_content_type == 'text/plain' or filename.lower().endswith('.txt'):
+                text_content = extract_text_from_txt(file_content)
+            elif file_content_type.startswith('image/') or filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')):
+                text_content = extract_text_from_image(file_content)
+            else:
+                continue
+
+            if not text_content.strip():
+                analysis_result = {
+                    'fileName': filename,
+                    'score': 0,
+                    'status': 'empty_file',
+                    'isValid': False,
+                    'workType': 'Не определен',
+                    'fileType': 'empty',
+                    'detectedType': 'unknown',
+                    'sectionsFound': [],
+                    'sectionsMissing': [],
+                    'errors': ['Не удалось извлечь текст из файла'],
+                    'warnings': [],
+                    'recommendations': ['Файл должен содержать текст'],
+                    'structureDetails': {
+                        'totalSectionsChecked': 0,
+                        'requiredSectionsFound': 0,
+                        'totalRequiredSections': 0,
+                        'contentLength': 0,
+                        'detectionConfidence': 'low'
+                    }
+                }
+            else:
+                analysis_result = analyze_work_structure(text_content, filename, work_type)
+
+            score = analysis_result.get('score', 0)
+            analysis_record = Analysis(
+                user_id=user.get("user_id"),
+                filename=filename,
+                score=score,
+                full_result=analysis_result
+            )
+            db.add(analysis_record)
+            analysis_records.append(analysis_record)
+            results.append(analysis_result)
+
+        db.commit()
+
+        return {
+            "totalFiles": len(files),
+            "processedFiles": len(results),
+            "results": results
+        }
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error analyzing multiple files: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка при анализе файлов: {str(e)}")
+    
+@router.post("/analyze-screenshots")
+async def analyze_screenshots(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    work_type: str = None,
+    db: Session = Depends(get_db)
+):
+    user = getattr(request.state, "user", None)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
+    
+    try:
+        logger.info(f"User {user.get('user_id')} is analyzing {len(files)} screenshots as combined document")
+
+        if not files:
+            raise HTTPException(status_code=400, detail="Скриншоты не указаны")
+
+        combined_text = ""
+        valid_files = []
+        invalid_files = []
+
+        for file in files:
+            try:
+                content = await file.read()
+                filename = file.filename
+                
+                if not (file.content_type.startswith('image/') or filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff'))):
+                    invalid_files.append(filename)
+                    continue
+
+                text_content = extract_text_from_image(content)
+                
+                if text_content.strip():
+                    combined_text += f"\n\n{text_content}"
+                    valid_files.append(filename)
+                    logger.info(f"Extracted {len(text_content)} chars from {filename}")
+                else:
+                    invalid_files.append(filename)
+                    logger.warning(f"No text found in {filename}")
+
+            except Exception as e:
+                logger.error(f"Error processing screenshot {file.filename}: {str(e)}")
+                invalid_files.append(file.filename)
+                continue
+
+        if not combined_text.strip():
+            raise HTTPException(
+                status_code=400, 
+                detail="Не удалось распознать текст ни на одном из скриншотов. Убедитесь, что скриншоты содержат четкий текст."
+            )
+
+        main_filename = valid_files[0] if valid_files else "combined_screenshots"
+        
+        analysis_result = analyze_work_structure(combined_text, main_filename, work_type)
+        
+        analysis_result['fileDetails'] = {
+            'totalScreenshots': len(files),
+            'validScreenshots': len(valid_files),
+            'invalidScreenshots': len(invalid_files),
+            'validFiles': valid_files,
+            'invalidFiles': invalid_files,
+            'combinedTextLength': len(combined_text)
+        }
+
+        score = analysis_result.get('score', 0)
+        analysis_record = Analysis(
+            user_id=user.get("user_id"),
+            filename=f"combined_screenshots_{len(files)}_files",
+            score=score,
+            full_result=analysis_result
+        )
+
+        db.add(analysis_record)
+        db.commit()
+        db.refresh(analysis_record)
+
+        return analysis_result
+
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error analyzing screenshots: {str(e)}")
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=f"Ошибка при анализе скриншотов: {str(e)}")

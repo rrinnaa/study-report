@@ -11,9 +11,10 @@ export default function Upload() {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const navigate = useNavigate()
   const [error, setError] = useState<string | null>(null)
-  const [uploadedFile, setUploadedFile] = useState<UploadedFile | null>(null)
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [uploading, setUploading] = useState(false)
   const [selectedWorkType, setSelectedWorkType] = useState<string>('auto')
+  const [uploadMode, setUploadMode] = useState<'single' | 'screenshots'>('single') // Новый state
 
   function getFileType(file: File): 'pdf' | 'image' | 'word' | 'text' | 'invalid' {
     const fileName = file.name.toLowerCase()
@@ -41,43 +42,56 @@ export default function Upload() {
     return 'invalid'
   }
 
-  function resetPreview() {
-    if (uploadedFile?.preview) {
-      URL.revokeObjectURL(uploadedFile.preview)
-    }
+  function resetPreviews() {
+    uploadedFiles.forEach(file => {
+      if (file.preview) {
+        URL.revokeObjectURL(file.preview)
+      }
+    })
   }
 
   function handleFiles(files: FileList | null) {
     setError(null)
     if (!files || files.length === 0) return
 
-    const file = files.item(0)
-    if (!file) return
-
-    const fileType = getFileType(file)
+    const newFiles: UploadedFile[] = []
     
-    if (fileType === 'invalid') {
-      setError('Разрешены только PDF, Word документы (.doc, .docx), текстовые файлы (.txt) или изображения (JPG, PNG, GIF).')
-      return
-    }
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      if (!file) continue
 
-    let preview: string | undefined
-    if (fileType === 'image') {
-      preview = URL.createObjectURL(file)
-    }
+      const fileType = getFileType(file)
+      
+      if (fileType === 'invalid') {
+        setError(`Файл "${file.name}" имеет неподдерживаемый формат.`)
+        continue
+      }
 
-    const uploaded: UploadedFile = {
-      file,
-      preview,
-      type: fileType
+      if (uploadMode === 'screenshots' && fileType !== 'image') {
+        setError(`В режиме скриншотов разрешены только изображения. Файл "${file.name}" не является изображением.`)
+        continue
+      }
+
+      let preview: string | undefined
+      if (fileType === 'image') {
+        preview = URL.createObjectURL(file)
+      }
+
+      newFiles.push({
+        file,
+        preview,
+        type: fileType
+      })
     }
     
-    setUploadedFile(uploaded)
+    if (newFiles.length > 0) {
+      setUploadedFiles(prev => [...prev, ...newFiles])
+    }
   }
 
   async function submitAndGo() {
-    if (!uploadedFile) {
-      setError('Сначала выберите файл.')
+    if (uploadedFiles.length === 0) {
+      setError('Сначала выберите файлы.')
       return
     }
 
@@ -86,21 +100,29 @@ export default function Upload() {
     
     try {
       const formData = new FormData()
-      formData.append('file', uploadedFile.file)
-      
       const token = localStorage.getItem('token')
       
       if (!token) {
         throw new Error('Требуется авторизация. Пожалуйста, войдите в систему.')
       }
 
-      console.log('Sending file to analyze...', uploadedFile.file.name)
-      
       let url = 'http://127.0.0.1:8000/api/analyze'
+      
+      if (uploadMode === 'screenshots') {
+        url = 'http://127.0.0.1:8000/api/analyze-screenshots'
+        uploadedFiles.forEach(uploadedFile => {
+          formData.append('files', uploadedFile.file)
+        })
+      } else {
+        formData.append('file', uploadedFiles[0].file)
+      }
+
       if (selectedWorkType !== 'auto') {
         url += `?work_type=${selectedWorkType}`
       }
       
+      console.log(`Sending files to ${url}...`)
+
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -123,14 +145,20 @@ export default function Upload() {
       console.log('Analysis result:', result)
       
       sessionStorage.setItem('analysis_result', JSON.stringify(result))
-      sessionStorage.setItem('uploaded_file_name', uploadedFile.file.name)
-      sessionStorage.setItem('uploaded_file_type', uploadedFile.type)
+      
+      if (uploadMode === 'screenshots') {
+        sessionStorage.setItem('uploaded_file_name', `Объединенные скриншоты (${uploadedFiles.length} файлов)`)
+      } else {
+        sessionStorage.setItem('uploaded_file_name', uploadedFiles[0].file.name)
+      }
+      
+      sessionStorage.setItem('uploaded_file_type', uploadMode === 'screenshots' ? 'combined_screenshots' : uploadedFiles[0].type)
       
       navigate('/analysis')
       
     } catch (err: any) {
       console.error('Upload error:', err)
-      setError(err.message || 'Ошибка при анализе файла')
+      setError(err.message || 'Ошибка при анализе файлов')
     } finally {
       setUploading(false)
     }
@@ -145,19 +173,26 @@ export default function Upload() {
     handleFiles(e.target.files)
   }
 
-  function removeFile() {
-    resetPreview()
-    setUploadedFile(null)
+  function removeFile(index: number) {
+    if (uploadedFiles[index]?.preview) {
+      URL.revokeObjectURL(uploadedFiles[index].preview!)
+    }
+    setUploadedFiles(prev => prev.filter((_, i) => i !== index))
   }
 
-  const renderFileIcon = () => {
-    if (uploadedFile?.preview) {
-      return <img src={uploadedFile.preview} alt="preview" className="thumb" />
+  function clearAllFiles() {
+    resetPreviews()
+    setUploadedFiles([])
+  }
+
+  const renderFileIcon = (file: UploadedFile) => {
+    if (file.preview) {
+      return <img src={file.preview} alt="preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8 }} />
     }
     
     const iconStyle = {
-      width: 96, 
-      height: 96, 
+      width: 64, 
+      height: 64, 
       borderRadius: 8, 
       background: '#f3f4f6',
       display: 'flex', 
@@ -165,11 +200,11 @@ export default function Upload() {
       justifyContent: 'center',
       border: '1px solid rgba(15,23,32,0.06)', 
       color: 'var(--text)',
-      fontSize: '14px',
+      fontSize: '12px',
       fontWeight: 600
     }
 
-    switch (uploadedFile?.type) {
+    switch (file.type) {
       case 'pdf':
         return <div style={iconStyle}>PDF</div>
       case 'word':
@@ -194,10 +229,45 @@ export default function Upload() {
   return (
     <div style={{ maxWidth: 820, margin: '40px auto' }}>
       <div className="upload-card">
-        <h2 className="upload-title">Загрузка отчета</h2>
-        <p className="upload-desc">
-          Загрузите файл для анализа структуры. Поддерживаются PDF, Word документы, текстовые файлы и изображения.
-        </p>
+        <h2 className="upload-title">Загрузка отчетов</h2>
+        
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'var(--text)' }}>
+            Режим загрузки:
+          </label>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                value="single"
+                checked={uploadMode === 'single'}
+                onChange={(e) => {
+                  setUploadMode(e.target.value as 'single' | 'screenshots')
+                  clearAllFiles()
+                }}
+              />
+              <span>Один файл (PDF, Word, TXT, изображение)</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+              <input
+                type="radio"
+                value="screenshots"
+                checked={uploadMode === 'screenshots'}
+                onChange={(e) => {
+                  setUploadMode(e.target.value as 'single' | 'screenshots')
+                  clearAllFiles()
+                }}
+              />
+              <span>Несколько скриншотов (объединенный анализ)</span>
+            </label>
+          </div>
+          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
+            {uploadMode === 'single' 
+              ? 'Загрузите один файл любого поддерживаемого формата'
+              : 'Загрузите несколько скриншотов - они будут объединены в один документ для анализа'
+            }
+          </div>
+        </div>
 
         <div style={{ marginBottom: '20px' }}>
           <label style={{ display: 'block', marginBottom: '8px', fontWeight: '600', color: 'var(--text)' }}>
@@ -234,10 +304,18 @@ export default function Upload() {
           onDragOver={(e) => e.preventDefault()}
         >
           <p style={{ color: 'var(--text)', fontWeight: 600 }}>
-            Перетащите файл сюда или выберите вручную
+            {uploadMode === 'single' 
+              ? 'Перетащите файл сюда или выберите вручную'
+              : 'Перетащите скриншоты сюда или выберите вручную'
+            }
           </p>
           <p style={{ color: 'var(--muted)', marginTop: 6 }}>
-            Поддерживаемые форматы: .pdf, .doc, .docx, .txt, .jpg, .png, .gif
+            {uploadMode === 'single'
+              ? 'Поддерживаемые форматы: .pdf, .doc, .docx, .txt, .jpg, .png, .gif'
+              : 'Разрешены только изображения: .jpg, .png, .gif'
+            }
+            <br />
+            <strong>Выбрано файлов: {uploadedFiles.length}</strong>
           </p>
 
           <input 
@@ -245,12 +323,13 @@ export default function Upload() {
             id="file" 
             className="file-input" 
             type="file"
-            accept=".pdf,.doc,.docx,.txt,image/*"
+            accept={uploadMode === 'single' ? ".pdf,.doc,.docx,.txt,image/*" : "image/*"}
             onChange={onInput} 
+            multiple={uploadMode === 'screenshots'}
           />
 
           <label htmlFor="file" className="file-btn" role="button">
-            Выберите файл
+            {uploadMode === 'single' ? 'Выберите файл' : 'Выберите скриншоты'}
           </label>
 
           {error && (
@@ -267,41 +346,89 @@ export default function Upload() {
           )}
         </div>
 
-        {uploadedFile && (
-          <div className="upload-meta" style={{ marginTop: 24 }}>
-            <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-              {renderFileIcon()}
-              
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 600, color: 'var(--text)' }}>
-                  {uploadedFile.file.name}
-                </div>
-                <div style={{ color: 'var(--muted)', marginTop: 4 }}>
-                  {formatFileSize(uploadedFile.file.size)} • {uploadedFile.type.toUpperCase()}
-                </div>
-                {uploading && (
-                  <div style={{ color: 'var(--accent)', marginTop: 4, fontSize: '14px' }}>
-                    ⏳ Анализируется...
-                  </div>
-                )}
-              </div>
+        {uploadedFiles.length > 0 && (
+          <div style={{ marginTop: 24 }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: 16
+            }}>
+              <h3 style={{ margin: 0, color: 'var(--text)' }}>
+                {uploadMode === 'single' ? 'Выбранный файл' : `Выбранные скриншоты (${uploadedFiles.length})`}
+              </h3>
+              <button 
+                className="btn" 
+                onClick={clearAllFiles}
+                disabled={uploading}
+                style={{ fontSize: '14px' }}
+              >
+                Очистить все
+              </button>
+            </div>
 
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button 
-                  className="btn" 
-                  onClick={removeFile} 
-                  disabled={uploading}
+            <div style={{ 
+              display: 'grid', 
+              gap: '12px',
+              maxHeight: '400px',
+              overflowY: 'auto',
+              padding: '8px'
+            }}>
+              {uploadedFiles.map((uploadedFile, index) => (
+                <div 
+                  key={index}
+                  style={{ 
+                    padding: '16px',
+                    border: '1px solid var(--control-border)',
+                    borderRadius: '8px',
+                    background: 'var(--page-bg)',
+                    display: 'flex',
+                    gap: '16px',
+                    alignItems: 'center'
+                  }}
                 >
-                  Удалить
-                </button>
-                <button 
-                  className="btn btn-primary btn-large" 
-                  onClick={submitAndGo}
-                  disabled={uploading}
-                >
-                  {uploading ? 'Анализ...' : 'Анализировать'}
-                </button>
-              </div>
+                  {renderFileIcon(uploadedFile)}
+                  
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: 'var(--text)' }}>
+                      {uploadedFile.file.name}
+                    </div>
+                    <div style={{ color: 'var(--muted)', marginTop: 4, fontSize: '14px' }}>
+                      {formatFileSize(uploadedFile.file.size)} • {uploadedFile.type.toUpperCase()}
+                    </div>
+                  </div>
+
+                  <button 
+                    className="btn" 
+                    onClick={() => removeFile(index)}
+                    disabled={uploading}
+                    style={{ fontSize: '14px', padding: '6px 12px' }}
+                  >
+                    Удалить
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ 
+              marginTop: 20, 
+              paddingTop: 20, 
+              borderTop: '1px solid var(--control-border)',
+              display: 'flex',
+              justifyContent: 'flex-end'
+            }}>
+              <button 
+                className="btn btn-primary btn-large" 
+                onClick={submitAndGo}
+                disabled={uploading}
+              >
+                {uploading 
+                  ? `Анализ...` 
+                  : uploadMode === 'screenshots' 
+                    ? `Анализировать ${uploadedFiles.length} скриншотов как один документ`
+                    : 'Анализировать файл'
+                }
+              </button>
             </div>
           </div>
         )}
@@ -309,5 +436,3 @@ export default function Upload() {
     </div>
   )
 }
-
-
