@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiService } from '../services/api'; 
 
 interface HeaderProps {
   isLoggedIn: boolean;
@@ -31,6 +32,20 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
   }, []);
 
   useEffect(() => {
+    const handleSystemLogout = () => {
+      setIsLoggedIn(false);
+      setUserProfile(null);
+      navigate('/auth');
+    };
+
+    window.addEventListener('logout', handleSystemLogout);
+    
+    return () => {
+      window.removeEventListener('logout', handleSystemLogout);
+    };
+  }, [navigate, setIsLoggedIn]);
+
+  useEffect(() => {
     if (isLoggedIn) {
       fetchUserProfile();
     }
@@ -38,15 +53,8 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
 
   const fetchUserProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) return;
-
-      const response = await fetch('http://localhost:8000/api/profile', {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
+      const response = await apiService.request('/profile');
+      
       if (response.ok) {
         const profile = await response.json();
         setUserProfile(profile);
@@ -56,12 +64,17 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
     }
   };
 
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    setIsLoggedIn(false);
-    setUserProfile(null);
-    setShowProfileMenu(false);
-    navigate('/');
+  const handleLogout = async () => {
+    try {
+      await apiService.logout(); 
+    } catch (error) {
+      console.error('Ошибка при выходе:', error);
+    } finally {
+      setIsLoggedIn(false);
+      setUserProfile(null);
+      setShowProfileMenu(false);
+      navigate('/');
+    }
   };
 
   const getInitials = () => {

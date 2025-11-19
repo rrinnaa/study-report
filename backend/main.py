@@ -9,6 +9,16 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Report Analyzer API")
 
 app.add_middleware(
+    JWTMiddleware,
+    public_paths=[
+        "/api/login",
+        "/api/register",
+        "/api/health",
+        "/api/refresh"
+    ]
+)
+
+app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
@@ -19,15 +29,6 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-)
-
-app.add_middleware(
-    JWTMiddleware,
-    public_paths=[
-        "/api/login",
-        "/api/register",
-        "/api/health",
-    ]
 )
 
 app.include_router(auth_router)

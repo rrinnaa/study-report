@@ -7,14 +7,46 @@ import Upload from './pages/Upload'
 import Analysis from './pages/Analysis'
 import MyUploads from './pages/MyUploads'
 import EditProfile from './pages/EditProfile';
+import { apiService } from './services/api';
 
 export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    setIsLoggedIn(!!token);
+    const checkAuth = () => {
+      const authenticated = apiService.isAuthenticated();
+      setIsLoggedIn(authenticated);
+      setIsLoading(false);
+    };
+
+    checkAuth();
+
+    const handleLogout = () => {
+      setIsLoggedIn(false);
+    };
+
+    window.addEventListener('logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('logout', handleLogout);
+    };
   }, []);
+
+  if (isLoading) {
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        fontSize: '18px',
+        color: 'var(--muted)'
+      }}>
+        Загрузка...
+      </div>
+    );
+  }
 
   return (
     <>
@@ -33,10 +65,21 @@ export default function App() {
           path="/my-uploads"
           element={isLoggedIn ? <MyUploads /> : <Navigate to="/auth" replace />}
         />
-        <Route path="/auth" element={<Auth setIsLoggedIn={setIsLoggedIn} />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-        <Route path="/edit-profile" element={isLoggedIn ? <EditProfile /> : <Navigate to="/auth" replace />}
+        <Route 
+          path="/edit-profile" 
+          element={isLoggedIn ? <EditProfile /> : <Navigate to="/auth" replace />} 
         />
+        <Route 
+          path="/auth" 
+          element={
+            !isLoggedIn ? (
+              <Auth setIsLoggedIn={setIsLoggedIn} />
+            ) : (
+              <Navigate to="/upload" replace />
+            )
+          } 
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </>
   );

@@ -5,8 +5,14 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from typing import Optional
 import re
-from .config import JWT_SECRET_KEY, JWT_ALGORITHM, JWT_EXPIRE_MINUTES
-from jose import jwt
+from .config import (
+    JWT_SECRET_KEY, 
+    JWT_ALGORITHM, 
+    JWT_EXPIRE_MINUTES,
+    JWT_REFRESH_SECRET_KEY,
+    JWT_REFRESH_EXPIRE_DAYS
+)
+from jose import jwt, JWTError
 from datetime import datetime, timedelta
 import logging
 
@@ -36,8 +42,18 @@ class UserResponse(BaseModel):
     first_name: str
     last_name: str
     email: str
+    
     class Config:
         from_attributes = True
+
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 def validate_password_policy(password: str) -> bool:
     return bool(PASSWORD_REGEX.fullmatch(password or ""))
@@ -51,79 +67,179 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=JWT_EXPIRE_MINUTES))
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "type": "access"})
     return jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
-@router.post("/register", status_code=201)
+def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + (expires_delta or timedelta(days=JWT_REFRESH_EXPIRE_DAYS))
+    to_encode.update({"exp": expire, "type": "refresh"})
+    return jwt.encode(to_encode, JWT_REFRESH_SECRET_KEY, algorithm=JWT_ALGORITHM)
+
+def verify_access_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+def verify_refresh_token(token: str) -> Optional[dict]:
+    try:
+        payload = jwt.decode(token, JWT_REFRESH_SECRET_KEY, algorithms=[JWT_ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except JWTError:
+        return None
+
+def create_tokens(user: User) -> dict:
+    token_data = {"sub": user.email, "user_id": user.id}
+    access_token = create_access_token(token_data)
+    refresh_token = create_refresh_token(token_data)
+    return {"access_token": access_token, "refresh_token": refresh_token}
+
+def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    payload = getattr(request.state, 'user', None)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Не авторизован")
+    
+    user_email = payload.get("sub")
+    db_user = db.query(User).filter(User.email == user_email).first()
+    
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    return db_user
+
+@router.post("/register", status_code=201, response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if not validate_password_policy(user.password):
-        raise HTTPException(status_code=400, detail="Пароль не соответствует требованиям")
-    existing = db.query(User).filter(User.email == user.email).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Пользователь уже существует")
+        raise HTTPException(
+            status_code=400, 
+            detail="Пароль должен содержать 6-14 символов, одну заглавную букву и одну цифру"
+        )
+    
+    existing_user = db.query(User).filter(User.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Пользователь с таким email уже существует")
+    
     hashed_password = get_password_hash(user.password)
-    user_data = user.dict(exclude={"password"})
+    user_data = user.model_dump(exclude={"password"})
     db_user = User(**user_data, hashed_password=hashed_password)
+    
+    tokens = create_tokens(db_user)
+    db_user.refresh_token = tokens["refresh_token"]
+    
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    token = create_access_token({"sub": db_user.email, "user_id": db_user.id})
-    return {"access_token": token, "token_type": "bearer", "user": UserResponse.from_orm(db_user)}
+    
+    return TokenResponse(
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        user=UserResponse.model_validate(db_user)
+    )
 
-@router.post("/login")
-def login(data: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == data.email).first()
-    if not db_user or not verify_password(data.password, db_user.hashed_password):
+@router.post("/login", response_model=TokenResponse)
+def login(credentials: UserLogin, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == credentials.email).first()
+    if not db_user or not verify_password(credentials.password, db_user.hashed_password):
         raise HTTPException(status_code=401, detail="Неверная почта или пароль")
-    token = create_access_token({"sub": db_user.email, "user_id": db_user.id})
-    return {"access_token": token, "token_type": "bearer", "user": UserResponse.from_orm(db_user)}
-
-@router.get("/profile")
-def get_profile(request: Request, db: Session = Depends(get_db)):
-    payload = request.state.user
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return UserResponse.from_orm(user)
-
-@router.put("/profile")
-def update_profile(request: Request, user_update: UserUpdate, db: Session = Depends(get_db)):
-    payload = request.state.user
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
     
-    if user_update.first_name is not None:
-        user.first_name = user_update.first_name
-    if user_update.last_name is not None:
-        user.last_name = user_update.last_name
-    if user_update.email is not None:
-        existing_user = db.query(User).filter(
-            User.email == user_update.email, 
-            User.id != user.id
-        ).first()
-        if existing_user:
-            raise HTTPException(status_code=400, detail="Email уже используется")
-        user.email = user_update.email
+    tokens = create_tokens(db_user)
+    db_user.refresh_token = tokens["refresh_token"]
+    db.commit()
+    db.refresh(db_user)
     
-    if user_update.password:
-        if not validate_password_policy(user_update.password):
+    return TokenResponse(
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        user=UserResponse.model_validate(db_user)
+    )
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh_token(request: RefreshRequest, db: Session = Depends(get_db)):
+    refresh_token = request.refresh_token
+    
+    payload = verify_refresh_token(refresh_token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Невалидный refresh token")
+    
+    user_email = payload.get("sub")
+    db_user = db.query(User).filter(
+        User.email == user_email,
+        User.refresh_token == refresh_token
+    ).first()
+    
+    if not db_user:
+        raise HTTPException(status_code=401, detail="Refresh token не найден или устарел")
+    
+    tokens = create_tokens(db_user)
+    db_user.refresh_token = tokens["refresh_token"]
+    db.commit()
+    db.refresh(db_user)
+    
+    return TokenResponse(
+        access_token=tokens["access_token"],
+        refresh_token=tokens["refresh_token"],
+        user=UserResponse.model_validate(db_user)
+    )
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    current_user.refresh_token = None
+    db.commit()
+    
+    return {"message": "Успешный выход из системы"}
+
+@router.get("/profile", response_model=UserResponse)
+def get_profile(current_user: User = Depends(get_current_user)):
+    return UserResponse.model_validate(current_user)
+
+@router.put("/profile", response_model=UserResponse)
+def update_profile(
+    user_update: UserUpdate, 
+    current_user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db)
+):
+    update_data = user_update.model_dump(exclude_unset=True)
+    
+    if "first_name" in update_data:
+        current_user.first_name = update_data["first_name"]
+    
+    if "last_name" in update_data:
+        current_user.last_name = update_data["last_name"]
+    
+    if "email" in update_data:
+        new_email = update_data["email"]
+        if new_email != current_user.email:
+            existing_user = db.query(User).filter(
+                User.email == new_email,
+                User.id != current_user.id
+            ).first()
+            if existing_user:
+                raise HTTPException(status_code=400, detail="Email уже используется")
+            current_user.email = new_email
+    
+    if "password" in update_data:
+        new_password = update_data["password"]
+        if not validate_password_policy(new_password):
             raise HTTPException(
                 status_code=400, 
-                detail="Пароль должен содержать минимум 6 символов, одну заглавную букву и одну цифру"
+                detail="Пароль должен содержать 6-14 символов, одну заглавную букву и одну цифру"
             )
-        user.hashed_password = get_password_hash(user_update.password)
+        current_user.hashed_password = get_password_hash(new_password)
     
     db.commit()
-    db.refresh(user)
-    return UserResponse.from_orm(user)
+    db.refresh(current_user)
+    
+    return UserResponse.model_validate(current_user)
 
 @router.delete("/profile")
-def delete_profile(request: Request, db: Session = Depends(get_db)):
-    payload = request.state.user
-    user = db.query(User).filter(User.email == payload.get("sub")).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    db.delete(user)
+def delete_profile(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db.delete(current_user)
     db.commit()
-    return {"message": "Пользователь удален"}
+    
+    return {"message": "Пользователь успешно удален"}

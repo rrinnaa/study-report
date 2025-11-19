@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import React, { useState } from 'react'
+import { apiService } from '../services/api'
 
 interface AuthProps {
   setIsLoggedIn: React.Dispatch<React.SetStateAction<boolean>>
@@ -47,27 +48,10 @@ export default function Auth({ setIsLoggedIn }: AuthProps) {
         setError('Введите корректный email')
         return
       }
-
-      const res = await fetch('http://127.0.0.1:8000/api/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: login.email,
-          password: login.password,
-        }),
-      })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data?.detail || 'Неверная почта или пароль')
-      }
-
-      localStorage.setItem('token', data.access_token)
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user))
-      }
+ 
+      const user = await apiService.login(login.email, login.password)
       
+      localStorage.setItem('user', JSON.stringify(user))
       setIsLoggedIn(true)
       navigate('/upload')
 
@@ -77,6 +61,7 @@ export default function Auth({ setIsLoggedIn }: AuthProps) {
       setLoading(false)
     }
   }
+
 
   async function handleRegister() {
     try {
@@ -99,28 +84,14 @@ export default function Auth({ setIsLoggedIn }: AuthProps) {
         return
       }
 
-      const res = await fetch('http://127.0.0.1:8000/api/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          first_name: reg.first,
-          last_name: reg.last,
-          email: reg.email,
-          password: reg.password,
-        }),
+const user = await apiService.register({
+        first_name: reg.first,
+        last_name: reg.last,
+        email: reg.email,
+        password: reg.password,
       })
-
-      const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data?.detail || 'Ошибка регистрации')
-      }
-
-      localStorage.setItem('token', data.access_token)
-      if (data.user) {
-        localStorage.setItem('user', JSON.stringify(data.user))
-      }
       
+      localStorage.setItem('user', JSON.stringify(user))
       setIsLoggedIn(true)
       navigate('/upload')
 

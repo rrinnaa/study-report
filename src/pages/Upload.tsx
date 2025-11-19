@@ -14,7 +14,19 @@ export default function Upload() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [uploading, setUploading] = useState(false)
   const [selectedWorkType, setSelectedWorkType] = useState<string>('auto')
-  const [uploadMode, setUploadMode] = useState<'single' | 'screenshots'>('single') // Новый state
+  const [uploadMode, setUploadMode] = useState<'single' | 'screenshots'>('single')
+
+  React.useEffect(() => {
+    const handleLogout = () => {
+      navigate('/auth');
+    };
+
+    window.addEventListener('logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('logout', handleLogout);
+    };
+  }, [navigate]);
 
   function getFileType(file: File): 'pdf' | 'image' | 'word' | 'text' | 'invalid' {
     const fileName = file.name.toLowerCase()
@@ -89,6 +101,65 @@ export default function Upload() {
     }
   }
 
+  const refreshTokens = async (): Promise<boolean> => {
+    const refreshToken = localStorage.getItem('refresh_token')
+    if (!refreshToken) return false
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/api/refresh', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+        }),
+      })
+
+      if (response.ok) {
+        const tokens = await response.json()
+        localStorage.setItem('access_token', tokens.access_token)
+        localStorage.setItem('refresh_token', tokens.refresh_token)
+        return true
+      }
+    } catch (error) {
+      console.error('Token refresh failed:', error)
+    }
+
+    return false
+  }
+
+  const makeRequestWithRetry = async (url: string, formData: FormData): Promise<Response> => {
+    let accessToken = localStorage.getItem('access_token')
+    
+    let response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`
+      },
+      body: formData
+    })
+
+    if (response.status === 401) {
+      const refreshed = await refreshTokens()
+      if (refreshed) {
+        accessToken = localStorage.getItem('access_token')
+        response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${accessToken}`
+          },
+          body: formData
+        })
+      } else {
+        window.dispatchEvent(new Event('logout'))
+        throw new Error('Требуется повторная авторизация')
+      }
+    }
+
+    return response
+  }
+
   async function submitAndGo() {
     if (uploadedFiles.length === 0) {
       setError('Сначала выберите файлы.')
@@ -100,12 +171,7 @@ export default function Upload() {
     
     try {
       const formData = new FormData()
-      const token = localStorage.getItem('token')
       
-      if (!token) {
-        throw new Error('Требуется авторизация. Пожалуйста, войдите в систему.')
-      }
-
       let url = 'http://127.0.0.1:8000/api/analyze'
       
       if (uploadMode === 'screenshots') {
@@ -123,20 +189,11 @@ export default function Upload() {
       
       console.log(`Sending files to ${url}...`)
 
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
-      })
+      const response = await makeRequestWithRetry(url, formData)
 
       console.log('Response status:', response.status)
 
       if (!response.ok) {
-        if (response.status === 401) {
-          throw new Error('Ошибка авторизации. Пожалуйста, войдите заново.')
-        }
         const errorText = await response.text()
         throw new Error(`Ошибка сервера: ${response.status} - ${errorText}`)
       }

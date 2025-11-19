@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiService } from '../services/api';
 
 interface Upload {
   id: number;
@@ -17,22 +18,7 @@ const MyUploads: React.FC = () => {
 
   const fetchUploads = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Пользователь не авторизован');
-        return;
-      }
-
-      const response = await fetch('http://localhost:8000/api/my-uploads', {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ошибка сервера: ${response.status}`);
-      }
-
+      const response = await apiService.request('/my-uploads');
       const data = await response.json();
       
       if (Array.isArray(data)) {
@@ -40,7 +26,6 @@ const MyUploads: React.FC = () => {
       } else {
         setError('Неверный формат данных от сервера');
       }
-      
     } catch (err: any) {
       setError(err.message || 'Ошибка при загрузке данных');
     } finally {
@@ -59,25 +44,12 @@ const MyUploads: React.FC = () => {
 
     setDeletingId(id);
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Пользователь не авторизован');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:8000/api/upload/${id}`, {
-        method: 'DELETE',
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        },
+      const response = await apiService.request(`/upload/${id}`, {
+        method: 'DELETE'
       });
 
-      if (!response.ok) {
-        throw new Error(`Ошибка удаления: ${response.status}`);
-      }
-
+      await response.json();
       setUploads(uploads.filter(upload => upload.id !== id));
-      
     } catch (err: any) {
       alert('Ошибка при удалении: ' + err.message);
     } finally {
@@ -87,31 +59,29 @@ const MyUploads: React.FC = () => {
 
   const viewFullAnalysis = async (uploadId: number) => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        setError('Пользователь не авторизован');
-        return;
-      }
-
-      const response = await fetch(`http://localhost:8000/api/upload/${uploadId}/details`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Ошибка загрузки деталей: ${response.status}`);
-      }
-
+      const response = await apiService.request(`/upload/${uploadId}/details`);
       const fullResult = await response.json();
       
       sessionStorage.setItem('analysis_result', JSON.stringify(fullResult));
-      navigate('/analysis');
+      sessionStorage.setItem('uploaded_file_name', uploads.find(u => u.id === uploadId)?.filename || '');
       
+      navigate('/analysis');
     } catch (err: any) {
       alert('Ошибка при загрузке деталей анализа: ' + err.message);
     }
   };
+
+  useEffect(() => {
+    const handleLogout = () => {
+      navigate('/auth');
+    };
+
+    window.addEventListener('logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('logout', handleLogout);
+    };
+  }, [navigate]);
 
   const getScoreColor = (score: number) => {
     if (score >= 80) return '#10b981';
@@ -126,7 +96,13 @@ const MyUploads: React.FC = () => {
     return 'Неудовлетворительно';
   };
 
-if (loading) return (
+  const handleRetry = async () => {
+    setLoading(true);
+    setError('');
+    await fetchUploads();
+  };
+
+  if (loading) return (
     <div className="container" style={{ textAlign: 'center', padding: '60px 20px' }}>
       <div style={{ 
         width: '40px', 
@@ -147,7 +123,7 @@ if (loading) return (
       <div style={{ color: 'var(--text)', marginBottom: '20px' }}>{error}</div>
       <button 
         className="btn btn-primary"
-        onClick={() => window.location.reload()}
+        onClick={handleRetry}
       >
         Попробовать снова
       </button>
@@ -161,7 +137,7 @@ if (loading) return (
       <p className="lead" style={{ marginBottom: '30px' }}>Загрузите свой первый документ для анализа</p>
       <button 
         className="btn btn-primary btn-large"
-        onClick={() => window.location.href = '/upload'}
+        onClick={() => navigate('/upload')} 
       >
         Загрузить документ
       </button>
@@ -179,8 +155,21 @@ if (loading) return (
         borderBottom: '1px solid var(--control-border)'
       }}>
         <h1 className="h1" style={{ margin: 0 }}>Мои загрузки</h1>
-        <div style={{ color: 'var(--muted)' }}>
-          Всего анализов: <strong style={{ color: 'var(--text)' }}>{uploads.length}</strong>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <div style={{ color: 'var(--muted)' }}>
+            Всего анализов: <strong style={{ color: 'var(--text)' }}>{uploads.length}</strong>
+          </div>
+          <button 
+            className="btn"
+            onClick={handleRetry}
+            style={{ 
+              padding: '6px 12px',
+              fontSize: '14px'
+            }}
+            title="Обновить список"
+          >
+            🔄
+          </button>
         </div>
       </div>
 
@@ -238,7 +227,13 @@ if (loading) return (
                   gap: '6px'
                 }}>
                   <span>📅</span>
-                  {new Date(upload.created_at).toLocaleDateString('ru-RU')}
+                  {new Date(upload.created_at).toLocaleDateString('ru-RU', {
+                    day: '2-digit',
+                    month: '2-digit',
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                  })}
                 </div>
               </div>
               

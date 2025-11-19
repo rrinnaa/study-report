@@ -17,6 +17,7 @@ class User(Base):
     email = Column(String(100), unique=True, index=True, nullable=False)
     hashed_password = Column(String(512), nullable=False)
     analyses = relationship("Analysis", back_populates="user")
+    refresh_token = Column(String, nullable=True)
 
 class Analysis(Base):
     __tablename__ = "analyses"

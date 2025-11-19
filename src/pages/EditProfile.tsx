@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { apiService } from '../services/api';
 
 interface UserProfile {
   id: number;
@@ -25,36 +26,38 @@ const EditProfile: React.FC = () => {
   });
 
   useEffect(() => {
+    const handleLogout = () => {
+      navigate('/auth');
+    };
+
+    window.addEventListener('logout', handleLogout);
+    
+    return () => {
+      window.removeEventListener('logout', handleLogout);
+    };
+  }, [navigate]);
+
+  useEffect(() => {
     fetchProfile();
   }, []);
 
   const fetchProfile = async () => {
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/auth');
-        return;
-      }
-
-      const response = await fetch('http://localhost:8000/api/profile', {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-        },
-      });
-
-      if (!response.ok) {
+      const response = await apiService.request('/profile');
+      
+      if (response.ok) {
+        const userProfile = await response.json();
+        setProfile(userProfile);
+        setFormData({
+          first_name: userProfile.first_name,
+          last_name: userProfile.last_name,
+          email: userProfile.email,
+          password: '',
+          confirmPassword: ''
+        });
+      } else {
         throw new Error('Ошибка загрузки профиля');
       }
-
-      const userProfile = await response.json();
-      setProfile(userProfile);
-      setFormData({
-        first_name: userProfile.first_name,
-        last_name: userProfile.last_name,
-        email: userProfile.email,
-        password: '',
-        confirmPassword: ''
-      });
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -73,13 +76,16 @@ const EditProfile: React.FC = () => {
       return;
     }
 
-    try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/auth');
+    if (formData.password) {
+      const passwordRegex = /^(?=.*[A-Z])(?=.*\d)[A-Za-z\d]{6,14}$/;
+      if (!passwordRegex.test(formData.password)) {
+        setError('Пароль должен содержать 6-14 символов, одну заглавную букву и одну цифру');
+        setSaving(false);
         return;
       }
+    }
 
+    try {
       const updateData: any = {
         first_name: formData.first_name,
         last_name: formData.last_name,
@@ -90,22 +96,18 @@ const EditProfile: React.FC = () => {
         updateData.password = formData.password;
       }
 
-      const response = await fetch('http://localhost:8000/api/profile', {
+      const response = await apiService.request('/profile', {
         method: 'PUT',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
         body: JSON.stringify(updateData)
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        alert('Профиль успешно обновлен');
+        navigate('/');
+      } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Ошибка сохранения');
       }
-
-      alert('Профиль успешно обновлен');
-      navigate('/');
       
     } catch (err: any) {
       setError(err.message);
@@ -123,27 +125,18 @@ const EditProfile: React.FC = () => {
     setError('');
 
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        navigate('/auth');
-        return;
-      }
-
-      const response = await fetch('http://localhost:8000/api/profile', {
-        method: 'DELETE',
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-        },
+      const response = await apiService.request('/profile', {
+        method: 'DELETE'
       });
 
-      if (!response.ok) {
+      if (response.ok) {
+        await apiService.logout();
+        alert('Профиль успешно удален');
+        navigate('/auth');
+      } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Ошибка удаления профиля');
       }
-
-      localStorage.removeItem('token');
-      alert('Профиль успешно удален');
-      navigate('/auth');
       
     } catch (err: any) {
       setError(err.message);
@@ -160,13 +153,43 @@ const EditProfile: React.FC = () => {
     }));
   };
 
+  const getPasswordValidationMessage = (password: string): string | null => {
+    if (!password) return null;
+    
+    if (password.length < 6 || password.length > 14) {
+      return "Пароль должен быть от 6 до 14 символов";
+    }
+    if (!/(?=.*[A-Z])/.test(password)) {
+      return "Должна быть хотя бы одна заглавная буква";
+    }
+    if (!/(?=.*\d)/.test(password)) {
+      return "Должна быть хотя бы одна цифра";
+    }
+    if (!/^[A-Za-z\d]+$/.test(password)) {
+      return "Только латинские буквы и цифры";
+    }
+    return null;
+  };
+
   if (loading) {
     return (
       <div className="container" style={{ textAlign: 'center', padding: '60px 20px' }}>
-        <div>Загрузка профиля...</div>
+        <div style={{ 
+          width: '40px', 
+          height: '40px', 
+          border: '4px solid var(--control-border)',
+          borderLeft: '4px solid var(--accent)',
+          borderRadius: '50%',
+          margin: '0 auto 20px',
+          animation: 'spin 1s linear infinite'
+        }}></div>
+        <div style={{ color: 'var(--muted)' }}>Загрузка профиля...</div>
       </div>
     );
   }
+
+  const passwordValidation = formData.password ? getPasswordValidationMessage(formData.password) : null;
+  const passwordsMatch = !formData.password || formData.password === formData.confirmPassword;
 
   return (
     <div className="container">
@@ -277,9 +300,21 @@ const EditProfile: React.FC = () => {
                 value={formData.password}
                 onChange={handleChange}
                 className="input"
-                style={{ width: '100%' }}
+                style={{ 
+                  width: '100%',
+                  borderColor: formData.password && passwordValidation ? '#dc2626' : undefined
+                }}
                 placeholder="Минимум 6 символов, заглавная буква и цифра"
               />
+              {passwordValidation && (
+                <div style={{ 
+                  color: '#dc2626', 
+                  fontSize: '12px', 
+                  marginTop: '4px' 
+                }}>
+                  {passwordValidation}
+                </div>
+              )}
             </div>
 
             {formData.password && (
@@ -298,16 +333,32 @@ const EditProfile: React.FC = () => {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   className="input"
-                  style={{ width: '100%' }}
+                  style={{ 
+                    width: '100%',
+                    borderColor: formData.confirmPassword && !passwordsMatch ? '#dc2626' : undefined
+                  }}
                 />
+                {formData.confirmPassword && !passwordsMatch && (
+                  <div style={{ 
+                    color: '#dc2626', 
+                    fontSize: '12px', 
+                    marginTop: '4px' 
+                  }}>
+                    Пароли не совпадают
+                  </div>
+                )}
               </div>
             )}
 
             <button
               type="submit"
-              disabled={saving}
+              disabled={saving || Boolean(formData.password && (passwordValidation || !passwordsMatch))}
               className="btn btn-primary"
-              style={{ width: '100%', marginBottom: '12px' }}
+              style={{ 
+                width: '100%', 
+                marginBottom: '12px',
+                opacity: (formData.password && (!!passwordValidation || !passwordsMatch)) ? 0.6 : 1
+              }}
             >
               {saving ? 'Сохранение...' : 'Сохранить изменения'}
             </button>
@@ -399,6 +450,13 @@ const EditProfile: React.FC = () => {
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   );
 };

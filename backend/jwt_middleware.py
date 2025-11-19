@@ -1,11 +1,8 @@
-from fastapi import Request, HTTPException
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from jose import jwt, JWTError
 from .config import JWT_SECRET_KEY, JWT_ALGORITHM
-import logging
-
-logger = logging.getLogger("jwt_middleware")
 
 class JWTMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, public_paths=None):
@@ -15,7 +12,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         
-        if request.method == "OPTIONS" or any(path.startswith(p) for p in self.public_paths):
+        if request.method == "OPTIONS" or any(path == p for p in self.public_paths):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")
@@ -26,14 +23,17 @@ class JWTMiddleware(BaseHTTPMiddleware):
         try:
             payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
             
+            if payload.get("type") != "access":
+                return JSONResponse(status_code=401, content={"detail": "Неверный тип токена"})
+            
             request.state.user = {
                 "user_id": payload.get("user_id"),
-                "sub": payload.get("sub"),
-                "email": payload.get("email")
+                "sub": payload.get("sub")
             }
-        except JWTError as e:
-            logger.warning(f"JWT Error: {e}")
-            return JSONResponse(status_code=401, content={"detail": "Невалидный или просроченный токен"})
+            
+        except jwt.ExpiredSignatureError:
+            return JSONResponse(status_code=401, content={"detail": "Токен истек"})
+        except JWTError:
+            return JSONResponse(status_code=401, content={"detail": "Невалидный токен"})
 
-        response = await call_next(request)
-        return response
+        return await call_next(request)
