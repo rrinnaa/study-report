@@ -9,20 +9,37 @@ interface Upload {
   created_at: string;
 }
 
+interface PaginationData {
+  items: Upload[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
 const MyUploads: React.FC = () => {
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 6,
+    total: 0
+  });
   const navigate = useNavigate();
 
-  const fetchUploads = async () => {
+  const fetchUploads = async (page = 1) => {
     try {
-      const response = await apiService.request('/my-uploads');
-      const data = await response.json();
+      const response = await apiService.request(`/my-uploads?page=${page}&limit=${pagination.limit}`);
+      const data: PaginationData = await response.json();
       
-      if (Array.isArray(data)) {
-        setUploads(data);
+      if (data && Array.isArray(data.items)) {
+        setUploads(data.items);
+        setPagination({
+          page: data.page,
+          limit: data.limit,
+          total: data.total
+        });
       } else {
         setError('Неверный формат данных от сервера');
       }
@@ -49,7 +66,8 @@ const MyUploads: React.FC = () => {
       });
 
       await response.json();
-      setUploads(uploads.filter(upload => upload.id !== id));
+      
+      fetchUploads(pagination.page);
     } catch (err: any) {
       alert('Ошибка при удалении: ' + err.message);
     } finally {
@@ -62,8 +80,9 @@ const MyUploads: React.FC = () => {
       const response = await apiService.request(`/upload/${uploadId}/details`);
       const fullResult = await response.json();
       
+      const upload = uploads.find(u => u.id === uploadId);
       sessionStorage.setItem('analysis_result', JSON.stringify(fullResult));
-      sessionStorage.setItem('uploaded_file_name', uploads.find(u => u.id === uploadId)?.filename || '');
+      sessionStorage.setItem('uploaded_file_name', upload?.filename || '');
       
       navigate('/analysis');
     } catch (err: any) {
@@ -99,8 +118,22 @@ const MyUploads: React.FC = () => {
   const handleRetry = async () => {
     setLoading(true);
     setError('');
-    await fetchUploads();
+    await fetchUploads(pagination.page);
   };
+
+  const [isChangingPage, setIsChangingPage] = useState(false);
+
+  const changePage = (newPage: number) => {
+  if (isChangingPage) return; 
+  
+  if (newPage >= 1 && newPage <= totalPages) {
+    setIsChangingPage(true);
+    setLoading(true);
+    fetchUploads(newPage).finally(() => setIsChangingPage(false));
+  }
+};
+  
+  const totalPages = Math.ceil(pagination.total / pagination.limit);
 
   if (loading) return (
     <div className="container" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -157,19 +190,8 @@ const MyUploads: React.FC = () => {
         <h1 className="h1" style={{ margin: 0 }}>Мои загрузки</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <div style={{ color: 'var(--muted)' }}>
-            Всего анализов: <strong style={{ color: 'var(--text)' }}>{uploads.length}</strong>
+            Показано: <strong style={{ color: 'var(--text)' }}>{uploads.length}</strong> из <strong style={{ color: 'var(--text)' }}>{pagination.total}</strong>
           </div>
-          <button 
-            className="btn"
-            onClick={handleRetry}
-            style={{ 
-              padding: '6px 12px',
-              fontSize: '14px'
-            }}
-            title="Обновить список"
-          >
-            🔄
-          </button>
         </div>
       </div>
 
@@ -345,6 +367,81 @@ const MyUploads: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {totalPages > 1 && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: '10px',
+          marginTop: '40px',
+          paddingTop: '20px',
+          borderTop: '1px solid var(--control-border)'
+        }}>
+          <button
+            onClick={() => changePage(pagination.page - 1)}
+            disabled={pagination.page <= 1 || isChangingPage}
+            className="btn"
+            style={{
+              padding: '8px 16px',
+              opacity: pagination.page <= 1 ? 0.5 : 1,
+              cursor: pagination.page <= 1 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            ← Назад
+          </button>
+
+          <div style={{
+            display: 'flex',
+            gap: '5px',
+            alignItems: 'center'
+          }}>
+            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+              let pageNum;
+              if (totalPages <= 5) {
+                pageNum = i + 1;
+              } else if (pagination.page <= 3) {
+                pageNum = i + 1;
+              } else if (pagination.page >= totalPages - 2) {
+                pageNum = totalPages - 4 + i;
+              } else {
+                pageNum = pagination.page - 2 + i;
+              }
+
+              return (
+                <button
+                  key={pageNum}
+                  onClick={() => changePage(pageNum)}
+                  style={{
+                    padding: '8px 12px',
+                    background: pagination.page === pageNum ? 'var(--accent)' : 'transparent',
+                    color: pagination.page === pageNum ? 'white' : 'var(--text)',
+                    border: '1px solid var(--control-border)',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                    minWidth: '40px'
+                  }}
+                >
+                  {pageNum}
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => changePage(pagination.page + 1)}
+            disabled={pagination.page >= totalPages}
+            className="btn"
+            style={{
+              padding: '8px 16px',
+              opacity: pagination.page >= totalPages ? 0.5 : 1,
+              cursor: pagination.page >= totalPages ? 'not-allowed' : 'pointer'
+            }}
+          >
+            Вперёд →
+          </button>
+        </div>
+      )}
 
       <style>{`
         @keyframes spin {

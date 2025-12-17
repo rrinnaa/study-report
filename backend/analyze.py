@@ -441,25 +441,51 @@ async def analyze_file(
 @router.get("/my-uploads")
 def get_my_uploads(
     request: Request,
+    page: int = 1,
+    limit: int = 6,
     db: Session = Depends(get_db)
 ):
     user = getattr(request.state, "user", None)
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
-    user_id = user.get("user_id")
-    uploads = db.query(Analysis).filter(Analysis.user_id == user_id).order_by(Analysis.created_at.desc()).all()
 
-    response = []
-    for upload in uploads:
-        response.append({
+    if page < 1:
+        page = 1
+    if limit < 1 or limit > 50:
+        limit = 6
+
+    user_id = user.get("user_id")
+    offset = (page - 1) * limit
+
+    total = db.query(Analysis).filter(
+        Analysis.user_id == user_id
+    ).count()
+    
+    uploads = (
+        db.query(Analysis)
+        .filter(Analysis.user_id == user_id)
+        .order_by(Analysis.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    items = [
+        {
             "id": upload.id,
             "filename": upload.filename,
             "score": upload.score,
             "created_at": upload.created_at.isoformat() if upload.created_at else None
-        })
-    
-    return response
+        }
+        for upload in uploads
+    ]
+
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "limit": limit
+    }
 
 @router.delete("/upload/{upload_id}")
 def delete_upload(
