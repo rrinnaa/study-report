@@ -18,6 +18,7 @@ class User(Base):
     hashed_password = Column(String(512), nullable=False)
     analyses = relationship("Analysis", back_populates="user")
     refresh_token = Column(String, nullable=True)
+    role = Column(String(20), default="user")
 
 class Analysis(Base):
     __tablename__ = "analyses"
@@ -26,7 +27,6 @@ class Analysis(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     filename = Column(String, nullable=False)
     score = Column(Integer, default=0)
-    created_at = Column(DateTime, default=datetime.utcnow)
     user = relationship("User", back_populates="analyses")
     full_result = Column(JSONB, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

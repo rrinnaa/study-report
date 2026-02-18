@@ -12,6 +12,7 @@ interface UserProfile {
   first_name: string;
   last_name: string;
   email: string;
+  role: string;
 }
 
 const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
@@ -83,26 +84,160 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
   };
 
   return (
-    <header style={{ position: 'relative', height: 72, background: '#000000', color: 'white' }}>
-      <div style={{ position: 'absolute', left: 8, top: 0, bottom: 0, display: 'flex', alignItems: 'center' }}>
-        <div
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 8,
-            background: 'rgba(255,255,255,0.2)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontWeight: 700
-          }}
-        >
-          OR
+    <header style={{ position: 'relative', background: '#000', color: 'white', height: 72 }}>
+      <div style={{ display: 'flex', alignItems: 'center', height: '100%', padding: '0 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', flex: '0 0 auto' }}>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 8,
+              background: 'rgba(255,255,255,0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontWeight: 700
+            }}
+          >
+            OR
+          </div>
         </div>
-      </div>
-
-      <div
-        style={{
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', marginLeft: 'auto' }}>
+          <button style={btnStyle} onClick={() => navigate('/')}>Главная</button>
+          {isLoggedIn && (
+            <>
+              <button style={btnStyle} onClick={() => navigate('/upload')}>
+                Загрузить
+              </button>
+              <button style={btnStyle} onClick={() => navigate('/my-uploads')}>
+                Мои загрузки
+              </button>
+              {userProfile?.role === 'admin' && (
+                <button style={btnStyle} onClick={() => navigate('/admin')}>
+                  Админ панель
+                </button>
+              )}
+            </>
+          )}
+          {!isLoggedIn ? (
+            <button style={btnStyle} onClick={() => navigate('/auth')}>
+              Вход / Регистрация
+            </button>
+          ) : (
+            <div style={{ position: 'relative' }} ref={menuRef}>
+              <button
+                style={{
+                  ...btnStyle,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  width: '44px',
+                  height: '44px',
+                  padding: 0
+                }}
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                title="Профиль"
+              >
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: 'rgba(255,255,255,0.2)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 14,
+                    fontWeight: 600
+                  }}
+                >
+                  {getInitials()}
+                </div>
+              </button>
+              {showProfileMenu && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '100%',
+                    right: 0,
+                    marginTop: '8px',
+                    background: 'white',
+                    border: '1px solid #e5e7eb',
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    minWidth: '200px',
+                    zIndex: 1000
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderBottom: '1px solid #f3f4f6'
+                    }}
+                  >
+                    <div style={{ fontWeight: 600, color: '#000000' }}>
+                      {userProfile?.first_name} {userProfile?.last_name}
+                    </div>
+                    <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
+                      {userProfile?.email}
+                    </div>
+                  </div>
+                  <div style={{ padding: '8px' }}>
+                    <button
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#000000',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: '14px'
+                      }}
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        navigate('/edit-profile');
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#f3f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      Редактировать профиль
+                    </button>
+                    <button
+                      style={{
+                        width: '100%',
+                        padding: '8px 12px',
+                        background: 'transparent',
+                        border: 'none',
+                        borderRadius: '6px',
+                        color: '#000000',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                        fontSize: '14px',
+                        marginTop: '4px'
+                      }}
+                      onClick={handleLogout}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = '#f3f4f6';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = 'transparent';
+                      }}
+                    >
+                      Выйти
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div style={{
           position: 'absolute',
           left: '50%',
           top: 0,
@@ -112,158 +247,16 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
           alignItems: 'center',
           justifyContent: 'center',
           fontSize: 20,
-          fontWeight: 700
-        }}
-      >
-        Отчетик
-      </div>
-
-      <div
-        style={{
-          position: 'absolute',
-          right: 8,
-          top: 0,
-          bottom: 0,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12
-        }}
-      >
-        <button style={btnStyle} onClick={() => navigate('/')}>
-          Главная
-        </button>
-
-        {isLoggedIn && (
-          <>
-            <button style={btnStyle} onClick={() => navigate('/upload')}>
-              Загрузить
-            </button>
-            <button style={btnStyle} onClick={() => navigate('/my-uploads')}>
-              Мои загрузки
-            </button>
-          </>
-        )}
-
-        {!isLoggedIn ? (
-          <button style={btnStyle} onClick={() => navigate('/auth')}>
-            Вход / Регистрация
-          </button>
-        ) : (
-          <div style={{ position: 'relative' }} ref={menuRef}>
-            <button
-              style={{
-                ...btnStyle,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '44px',
-                height: '44px',
-                padding: 0
-              }}
-              onClick={() => setShowProfileMenu(!showProfileMenu)}
-              title="Профиль"
-            >
-              <div
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: '50%',
-                  background: 'rgba(255,255,255,0.2)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 14,
-                  fontWeight: 600
-                }}
-              >
-                {getInitials()}
-              </div>
-            </button>
-
-            {showProfileMenu && (
-              <div
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '8px',
-                  background: 'white',
-                  border: '1px solid #e5e7eb',
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                  minWidth: '200px',
-                  zIndex: 1000
-                }}
-              >
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderBottom: '1px solid #f3f4f6'
-                  }}
-                >
-                  <div style={{ fontWeight: 600, color: '#000000' }}>
-                    {userProfile?.first_name} {userProfile?.last_name}
-                  </div>
-                  <div style={{ fontSize: '14px', color: '#6b7280', marginTop: '4px' }}>
-                    {userProfile?.email}
-                  </div>
-                </div>
-                
-                <div style={{ padding: '8px' }}>
-                  <button
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#000000',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontSize: '14px'
-                    }}
-                    onClick={() => {
-                      setShowProfileMenu(false);
-                      navigate('/edit-profile');
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#f3f4f6';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    Редактировать профиль
-                  </button>
-
-                  <button
-                    style={{
-                      width: '100%',
-                      padding: '8px 12px',
-                      background: 'transparent',
-                      border: 'none',
-                      borderRadius: '6px',
-                      color: '#000000',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                      fontSize: '14px',
-                      marginTop: '4px'
-                    }}
-                    onClick={handleLogout}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = '#f3f4f6';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = 'transparent';
-                    }}
-                  >
-                    Выйти
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+          fontWeight: 700,
+          whiteSpace: 'nowrap',
+          textOverflow: 'ellipsis',
+          overflow: 'hidden',
+          maxWidth: '100%',
+          pointerEvents: 'none',
+          zIndex: 1
+        }}>
+          Отчетик
+        </div>
       </div>
     </header>
   );

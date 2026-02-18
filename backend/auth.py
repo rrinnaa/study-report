@@ -4,6 +4,8 @@ from .database import User, get_db
 from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr
 from typing import Optional
+from .security import require_role
+from .dependencies import get_current_user
 import re
 from .config import (
     JWT_SECRET_KEY, 
@@ -42,6 +44,7 @@ class UserResponse(BaseModel):
     first_name: str
     last_name: str
     email: str
+    role: str
     
     class Config:
         from_attributes = True
@@ -51,6 +54,9 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     user: UserResponse
+    
+class RoleUpdate(BaseModel):
+    role: str
 
 class RefreshRequest(BaseModel):
     refresh_token: str
@@ -99,19 +105,6 @@ def create_tokens(user: User) -> dict:
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
     return {"access_token": access_token, "refresh_token": refresh_token}
-
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
-    payload = getattr(request.state, 'user', None)
-    if not payload:
-        raise HTTPException(status_code=401, detail="Не авторизован")
-    
-    user_email = payload.get("sub")
-    db_user = db.query(User).filter(User.email == user_email).first()
-    
-    if not db_user:
-        raise HTTPException(status_code=404, detail="Пользователь не найден")
-    
-    return db_user
 
 @router.post("/register", status_code=201, response_model=TokenResponse)
 def register(user: UserCreate, db: Session = Depends(get_db)):
@@ -242,4 +235,50 @@ def delete_profile(current_user: User = Depends(get_current_user), db: Session =
     db.delete(current_user)
     db.commit()
     
+    return {"message": "Пользователь успешно удален"}
+
+
+@router.put("/users/{user_id}/role")
+def update_user_role(
+    user_id: int,
+    data: RoleUpdate,
+    db: Session = Depends(get_db),
+    admin=Depends(require_role("admin"))
+):
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    user.role = data.role
+    db.commit()
+
+    return {"message": f"Роль пользователя изменена на {data.role}"}
+
+@router.get("/users", response_model=list[UserResponse])
+def get_all_users(
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+    users = db.query(User).offset(skip).limit(limit).all()
+    return users
+
+
+@router.delete("/users/{user_id}")
+def delete_any_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Нельзя удалить самого себя")
+    
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    db.delete(user)
+    db.commit()
     return {"message": "Пользователь успешно удален"}

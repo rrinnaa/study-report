@@ -191,6 +191,26 @@ class ApiService {
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   }
+  
+  async getAllUsers(skip: number = 0, limit: number = 100) {
+    const response = await this.request(`/users?skip=${skip}&limit=${limit}`);
+    return response.json();
+  }
+
+  async updateUserRole(userId: number, role: string) {
+    const response = await this.request(`/users/${userId}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    });
+    return response.json();
+  }
+
+  async deleteUser(userId: number) {
+    const response = await this.request(`/users/${userId}`, {
+      method: 'DELETE',
+    });
+    return response.json();
+  }
 }
 
 export const apiService = new ApiService();

@@ -7,6 +7,7 @@ import Upload from './pages/Upload'
 import Analysis from './pages/Analysis'
 import MyUploads from './pages/MyUploads'
 import EditProfile from './pages/EditProfile';
+import AdminPanel from './pages/AdminPanel';
 import { apiService } from './services/api';
 
 export default function App() {
@@ -68,6 +69,10 @@ export default function App() {
         <Route 
           path="/edit-profile" 
           element={isLoggedIn ? <EditProfile /> : <Navigate to="/auth" replace />} 
+        />
+        <Route 
+          path="/admin" 
+          element={isLoggedIn && apiService.getCurrentUser()?.role === 'admin' ? <AdminPanel /> : <Navigate to="/" replace />} 
         />
         <Route 
           path="/auth" 

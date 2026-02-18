@@ -3,10 +3,11 @@ import re, logging
 from io import BytesIO
 import PyPDF2, docx
 from .database import get_db
-from .database import Analysis
+from .database import Analysis, User
 from sqlalchemy.orm import Session
 from .ocr_service import ocr_service
 from PIL import Image
+from .dependencies import get_current_user
 
 router = APIRouter(prefix="/api", tags=["Analyzer"])
 logger = logging.getLogger("analyzer")
@@ -156,7 +157,6 @@ def extract_text_from_txt(file_content: bytes) -> str:
     return ""
 
 def extract_text_from_image(file_content: bytes) -> str:
-    """Извлекает текст из изображения с помощью OCR"""
     try:
         image = Image.open(BytesIO(file_content))
         image.verify()
@@ -285,17 +285,13 @@ def calculate_bonus(content: str, work_type: str) -> int:
 
 @router.post("/analyze")
 async def analyze_file(
-    request: Request,
     file: UploadFile = File(...),
     work_type: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
     try:
-        logger.info(f"User {user.get('user_id')} is analyzing file: {file.filename}")
+        logger.info(f"User {current_user.id} is analyzing file: {file.filename}")
 
         if not file.filename:
             raise HTTPException(status_code=400, detail="Имя файла не указано")
@@ -311,13 +307,12 @@ async def analyze_file(
             text_content = extract_text_from_docx(content)
         elif file_content_type == 'text/plain' or filename.lower().endswith('.txt'):
             text_content = extract_text_from_txt(content)
-        
         elif file_content_type.startswith('image/') or filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff')):
             text_content = extract_text_from_image(content)
             
             if not text_content.strip():
                 analysis_record = Analysis(
-                    user_id=user.get("user_id"),
+                    user_id=current_user.id,
                     filename=filename,
                     score=0,
                     full_result={
@@ -353,10 +348,9 @@ async def analyze_file(
                 db.add(analysis_record)
                 db.commit()
                 return analysis_record.full_result
-
         else:
             analysis_record = Analysis(
-                user_id=user.get("user_id"),
+                user_id=current_user.id,
                 filename=filename,
                 score=0,
                 full_result={
@@ -381,14 +375,13 @@ async def analyze_file(
                     }
                 }
             )
-            
             db.add(analysis_record)
             db.commit()
             return analysis_record.full_result
 
         if not text_content.strip():
             analysis_record = Analysis(
-                user_id=user.get("user_id"),
+                user_id=current_user.id,
                 filename=filename,
                 score=0,
                 full_result={
@@ -413,7 +406,6 @@ async def analyze_file(
                     }
                 }
             )
-            
             db.add(analysis_record)
             db.commit()
             return analysis_record.full_result
@@ -422,7 +414,7 @@ async def analyze_file(
         score = analysis_result.get('score', 0)
 
         analysis_record = Analysis(
-            user_id=user.get("user_id"),
+            user_id=current_user.id,
             filename=filename,
             score=score,
             full_result=analysis_result
@@ -437,33 +429,28 @@ async def analyze_file(
     except Exception as e:
         logger.error(f"Error analyzing file: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при анализе файла: {str(e)}")
-    
+
 @router.get("/my-uploads")
 def get_my_uploads(
-    request: Request,
     page: int = 1,
     limit: int = 6,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-
     if page < 1:
         page = 1
     if limit < 1 or limit > 50:
         limit = 6
 
-    user_id = user.get("user_id")
     offset = (page - 1) * limit
 
     total = db.query(Analysis).filter(
-        Analysis.user_id == user_id
+        Analysis.user_id == current_user.id
     ).count()
     
     uploads = (
         db.query(Analysis)
-        .filter(Analysis.user_id == user_id)
+        .filter(Analysis.user_id == current_user.id)
         .order_by(Analysis.created_at.desc())
         .offset(offset)
         .limit(limit)
@@ -487,25 +474,44 @@ def get_my_uploads(
         "limit": limit
     }
 
-@router.delete("/upload/{upload_id}")
-def delete_upload(
+@router.get("/upload/{upload_id}/details")
+def get_upload_details(
     upload_id: int,
-    request: Request,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
-    user_id = user.get("user_id")
-    
-    upload = db.query(Analysis).filter(
-        Analysis.id == upload_id,
-        Analysis.user_id == user_id
-    ).first()
+    upload = db.query(Analysis).filter(Analysis.id == upload_id).first()
     
     if not upload:
         raise HTTPException(status_code=404, detail="Запись не найдена")
+    
+    if current_user.role != "admin" and upload.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, 
+            detail="У вас нет доступа к этому анализу"
+        )
+    
+    if not upload.full_result:
+        raise HTTPException(status_code=404, detail="Детали анализа не найдены")
+    
+    return upload.full_result
+
+@router.delete("/upload/{upload_id}")
+def delete_upload(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    upload = db.query(Analysis).filter(Analysis.id == upload_id).first()
+    
+    if not upload:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+    
+    if current_user.role != "admin" and upload.user_id != current_user.id:
+        raise HTTPException(
+            status_code=403, 
+            detail="У вас нет прав на удаление этого анализа"
+        )
     
     try:
         db.delete(upload)
@@ -516,43 +522,15 @@ def delete_upload(
         logger.error(f"Error deleting upload {upload_id}: {e}")
         raise HTTPException(status_code=500, detail="Ошибка при удалении записи")
 
-@router.get("/upload/{upload_id}/details")
-def get_upload_details(
-    upload_id: int,
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
-    user_id = user.get("user_id")
-    upload = db.query(Analysis).filter(
-        Analysis.id == upload_id,
-        Analysis.user_id == user_id
-    ).first()
-    
-    if not upload:
-        raise HTTPException(status_code=404, detail="Запись не найдена")
-    
-    if not upload.full_result:
-        raise HTTPException(status_code=404, detail="Детали анализа не найдены")
-    
-    return upload.full_result
-
 @router.post("/analyze-multiple")
 async def analyze_multiple_files(
-    request: Request,
     files: list[UploadFile] = File(...),
     work_type: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
     try:
-        logger.info(f"User {user.get('user_id')} is analyzing {len(files)} files")
+        logger.info(f"User {current_user.id} is analyzing {len(files)} files")
 
         if not files:
             raise HTTPException(status_code=400, detail="Файлы не указаны")
@@ -604,7 +582,7 @@ async def analyze_multiple_files(
 
             score = analysis_result.get('score', 0)
             analysis_record = Analysis(
-                user_id=user.get("user_id"),
+                user_id=current_user.id,
                 filename=filename,
                 score=score,
                 full_result=analysis_result
@@ -625,20 +603,16 @@ async def analyze_multiple_files(
         db.rollback()
         logger.error(f"Error analyzing multiple files: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Ошибка при анализе файлов: {str(e)}")
-    
+
 @router.post("/analyze-screenshots")
 async def analyze_screenshots(
-    request: Request,
     files: list[UploadFile] = File(...),
     work_type: str = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    user = getattr(request.state, "user", None)
-    if not user:
-        raise HTTPException(status_code=401, detail="Пользователь не авторизован")
-    
     try:
-        logger.info(f"User {user.get('user_id')} is analyzing {len(files)} screenshots as combined document")
+        logger.info(f"User {current_user.id} is analyzing {len(files)} screenshots as combined document")
 
         if not files:
             raise HTTPException(status_code=400, detail="Скриншоты не указаны")
@@ -692,7 +666,7 @@ async def analyze_screenshots(
 
         score = analysis_result.get('score', 0)
         analysis_record = Analysis(
-            user_id=user.get("user_id"),
+            user_id=current_user.id,
             filename=f"combined_screenshots_{len(files)}_files",
             score=score,
             full_result=analysis_result
