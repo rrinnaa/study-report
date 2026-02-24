@@ -3,6 +3,9 @@ from sqlalchemy.orm import sessionmaker, declarative_base, relationship
 from datetime import datetime
 from .config import DATABASE_URL
 from sqlalchemy.dialects.postgresql import JSONB
+import logging
+
+logger = logging.getLogger("database")
 
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -29,7 +32,13 @@ class Analysis(Base):
     score = Column(Integer, default=0)
     user = relationship("User", back_populates="analyses")
     full_result = Column(JSONB, nullable=True)
+    file_object_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+def run_migrations():
+    """Создаёт таблицы, если их ещё нет."""
+    Base.metadata.create_all(bind=engine)
+    logger.info("Таблицы созданы (или уже существовали)")
 
 def get_db():
     db = SessionLocal()

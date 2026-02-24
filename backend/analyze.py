@@ -1,6 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, Request
 import re, logging
 from io import BytesIO
+from datetime import datetime
 import PyPDF2, docx
 from .database import get_db
 from .database import Analysis, User
@@ -8,6 +9,18 @@ from sqlalchemy.orm import Session
 from .ocr_service import ocr_service
 from PIL import Image
 from .dependencies import get_current_user
+from .security import require_role
+from .minio_service import minio_service
+import uuid
+
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.lib import colors
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Table, TableStyle
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 
 router = APIRouter(prefix="/api", tags=["Analyzer"])
 logger = logging.getLogger("analyzer")
@@ -174,6 +187,145 @@ def extract_text_from_image(file_content: bytes) -> str:
         logger.error(f"Image extraction error: {e}")
         return ""
 
+def generate_report_pdf(analysis_result: dict, user_full_name: str) -> bytes:
+    """Генерирует PDF-отчёт по результатам анализа."""
+    buffer = BytesIO()
+    _register_cyrillic_font()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=2 * cm,
+        leftMargin=2 * cm,
+        topMargin=2 * cm,
+        bottomMargin=2 * cm,
+    )
+
+    font_name = "DejaVuSans" if _cyrillic_font_available() else "Helvetica"
+    font_bold = "DejaVuSans-Bold" if _cyrillic_font_available() else "Helvetica-Bold"
+
+    styles = getSampleStyleSheet()
+    style_title = ParagraphStyle("Title", fontName=font_bold, fontSize=16, spaceAfter=6, textColor=colors.HexColor("#1e293b"))
+    style_subtitle = ParagraphStyle("Subtitle", fontName=font_name, fontSize=11, spaceAfter=4, textColor=colors.HexColor("#64748b"))
+    style_section = ParagraphStyle("Section", fontName=font_bold, fontSize=12, spaceBefore=12, spaceAfter=4, textColor=colors.HexColor("#334155"))
+    style_body = ParagraphStyle("Body", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#1e293b"), leading=14)
+    style_ok = ParagraphStyle("Ok", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#16a34a"), leading=14)
+    style_err = ParagraphStyle("Err", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#dc2626"), leading=14)
+    style_warn = ParagraphStyle("Warn", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#d97706"), leading=14)
+
+    score = analysis_result.get("score", 0)
+    score_color = colors.HexColor("#16a34a") if score >= 80 else (colors.HexColor("#d97706") if score >= 60 else colors.HexColor("#dc2626"))
+
+    story = []
+
+    story.append(Paragraph("Отчёт об анализе учебной работы", style_title))
+    story.append(Paragraph(f"Студент: {user_full_name}", style_subtitle))
+    story.append(Paragraph(f"Файл: {analysis_result.get('fileName', '—')}", style_subtitle))
+    story.append(Paragraph(f"Дата: {datetime.utcnow().strftime('%d.%m.%Y %H:%M')} UTC", style_subtitle))
+    story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0"), spaceAfter=8))
+
+    score_style = ParagraphStyle("Score", fontName=font_bold, fontSize=28, textColor=score_color, spaceAfter=2)
+    story.append(Paragraph(f"Итоговый балл: {score}/100", score_style))
+    work_type = analysis_result.get("workType", "Не определён")
+    story.append(Paragraph(f"Тип работы: {work_type}", style_body))
+    is_valid = analysis_result.get("isValid", False)
+    status_text = "✓ Работа соответствует требованиям" if is_valid else "✗ Работа не соответствует требованиям"
+    status_style = style_ok if is_valid else style_err
+    story.append(Paragraph(status_text, status_style))
+    story.append(Spacer(1, 8))
+
+    sections_found = analysis_result.get("sectionsFound", [])
+    if sections_found:
+        story.append(Paragraph("Структура работы", style_section))
+        for sec in sections_found:
+            found = sec.get("found", False)
+            optional = sec.get("optional", False)
+            name = sec.get("name", "")
+            prefix = "✓" if found else ("○" if optional else "✗")
+            sec_style = style_ok if found else (style_warn if optional else style_err)
+            label = " (необязательный)" if optional else ""
+            story.append(Paragraph(f"{prefix} {name}{label}", sec_style))
+
+    errors = analysis_result.get("errors", [])
+    if errors:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Ошибки", style_section))
+        for err in errors:
+            story.append(Paragraph(f"• {err}", style_err))
+
+    warnings = analysis_result.get("warnings", [])
+    if warnings:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Предупреждения", style_section))
+        for w in warnings:
+            story.append(Paragraph(f"• {w}", style_warn))
+
+    recommendations = analysis_result.get("recommendations", [])
+    if recommendations:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Рекомендации", style_section))
+        for rec in recommendations:
+            story.append(Paragraph(f"• {rec}", style_body))
+
+    details = analysis_result.get("structureDetails", {})
+    if details:
+        story.append(Spacer(1, 6))
+        story.append(Paragraph("Детали проверки", style_section))
+        table_data = [
+            ["Параметр", "Значение"],
+            ["Обязательных разделов найдено", f"{details.get('requiredSectionsFound', 0)} / {details.get('totalRequiredSections', 0)}"],
+            ["Всего разделов проверено", str(details.get("totalSectionsChecked", 0))],
+            ["Объём текста (символов)", str(details.get("contentLength", 0))],
+            ["Уверенность определения типа", details.get("detectionConfidence", "—")],
+        ]
+        table = Table(table_data, colWidths=[10 * cm, 6 * cm])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#334155")),
+            ("FONTNAME", (0, 0), (-1, 0), font_bold),
+            ("FONTNAME", (0, 1), (-1, -1), font_name),
+            ("FONTSIZE", (0, 0), (-1, -1), 9),
+            ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e2e8f0")),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(table)
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def _register_cyrillic_font():
+    """Регистрирует шрифт с поддержкой кириллицы, если доступен."""
+    try:
+        font_paths = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/System/Library/Fonts/Supplemental/Arial.ttf",
+            "/Library/Fonts/Arial.ttf",
+        ]
+        regular = next((p for p in font_paths if os.path.exists(p) and "Bold" not in p), None)
+        bold = next((p for p in font_paths if os.path.exists(p) and "Bold" in p), None)
+
+        if regular:
+            pdfmetrics.registerFont(TTFont("DejaVuSans", regular))
+        if bold:
+            pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold))
+    except Exception:
+        pass
+
+
+def _cyrillic_font_available() -> bool:
+    try:
+        pdfmetrics.getFont("DejaVuSans")
+        return True
+    except Exception:
+        return False
+
+
 def detect_work_type(filename: str, content: str) -> str:
     filename_lower = filename.lower()
     content_lower = content.lower()
@@ -301,6 +453,7 @@ async def analyze_file(
         file_content_type = file.content_type or ""
         text_content = ""
 
+
         if file_content_type == 'application/pdf' or filename.lower().endswith('.pdf'):
             text_content = extract_text_from_pdf(content)
         elif file_content_type in ['application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/msword'] or filename.lower().endswith(('.doc', '.docx')):
@@ -315,6 +468,7 @@ async def analyze_file(
                     user_id=current_user.id,
                     filename=filename,
                     score=0,
+                    file_object_name=None,
                     full_result={
                         'fileName': filename,
                         'score': 0,
@@ -353,6 +507,7 @@ async def analyze_file(
                 user_id=current_user.id,
                 filename=filename,
                 score=0,
+                file_object_name=None,
                 full_result={
                     'fileName': filename,
                     'score': 0,
@@ -384,6 +539,7 @@ async def analyze_file(
                 user_id=current_user.id,
                 filename=filename,
                 score=0,
+                file_object_name=None,
                 full_result={
                     'fileName': filename,
                     'score': 0,
@@ -413,10 +569,23 @@ async def analyze_file(
         analysis_result = analyze_work_structure(text_content, filename, work_type)
         score = analysis_result.get('score', 0)
 
+        report_object_name = None
+        if minio_service:
+            try:
+                user_full_name = f"{current_user.first_name} {current_user.last_name}"
+                pdf_bytes = generate_report_pdf(analysis_result, user_full_name)
+                report_object_name = f"reports/{current_user.id}/{uuid.uuid4()}.pdf"
+                minio_service.upload_file(report_object_name, pdf_bytes, "application/pdf")
+                logger.info(f"PDF-отчёт сохранён: {report_object_name}")
+            except Exception as minio_err:
+                logger.warning(f"Не удалось сохранить PDF-отчёт в MinIO: {minio_err}")
+                report_object_name = None
+
         analysis_record = Analysis(
             user_id=current_user.id,
             filename=filename,
             score=score,
+            file_object_name=report_object_name,
             full_result=analysis_result
         )
 
@@ -434,44 +603,61 @@ async def analyze_file(
 def get_my_uploads(
     page: int = 1,
     limit: int = 6,
+    search: str = None,
+    min_score: int = None,
+    max_score: int = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    if page < 1:
-        page = 1
-    if limit < 1 or limit > 50:
-        limit = 6
+    if page < 1: page = 1
+    if limit < 1 or limit > 50: limit = 6
+    if sort_by not in ["created_at", "score", "filename"]: sort_by = "created_at"
+    if sort_order not in ["asc", "desc"]: sort_order = "desc"
+    if min_score is not None and min_score < 0:
+        raise HTTPException(status_code=400, detail="min_score должен быть >= 0")
+    if max_score is not None and max_score < 0:
+        raise HTTPException(status_code=400, detail="max_score должен быть >= 0")
+    if min_score is not None and max_score is not None and min_score > max_score:
+        raise HTTPException(status_code=400, detail="min_score не может быть больше max_score")
 
     offset = (page - 1) * limit
-
-    total = db.query(Analysis).filter(
-        Analysis.user_id == current_user.id
-    ).count()
+    query = db.query(Analysis).filter(Analysis.user_id == current_user.id)
     
-    uploads = (
-        db.query(Analysis)
-        .filter(Analysis.user_id == current_user.id)
-        .order_by(Analysis.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
-    )
-
-    items = [
-        {
-            "id": upload.id,
-            "filename": upload.filename,
-            "score": upload.score,
-            "created_at": upload.created_at.isoformat() if upload.created_at else None
-        }
-        for upload in uploads
-    ]
+    if search: query = query.filter(Analysis.filename.ilike(f"%{search}%"))
+    if min_score is not None: query = query.filter(Analysis.score >= min_score)
+    if max_score is not None: query = query.filter(Analysis.score <= max_score)
+    
+    total = query.count()
+    
+    sort_column = getattr(Analysis, sort_by)
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+    
+    uploads = query.offset(offset).limit(limit).all()
 
     return {
-        "items": items,
+        "items": [
+            {
+                "id": upload.id,
+                "filename": upload.filename,
+                "score": upload.score,
+                "created_at": upload.created_at.isoformat() if upload.created_at else None,
+                "has_file": bool(upload.file_object_name)
+            }
+            for upload in uploads
+        ],
         "total": total,
         "page": page,
-        "limit": limit
+        "limit": limit,
+        "total_pages": (total + limit - 1) // limit,
+        "filters": {
+            "search": search,
+            "min_score": min_score,
+            "max_score": max_score,
+            "sort_by": sort_by,
+            "sort_order": sort_order
+        }
     }
 
 @router.get("/upload/{upload_id}/details")
@@ -514,6 +700,12 @@ def delete_upload(
         )
     
     try:
+        if upload.file_object_name and minio_service:
+            try:
+                minio_service.delete_file(upload.file_object_name)
+            except Exception as minio_err:
+                logger.warning(f"Не удалось удалить файл из MinIO: {minio_err}")
+
         db.delete(upload)
         db.commit()
         return {"message": "Запись успешно удалена"}
@@ -521,6 +713,36 @@ def delete_upload(
         db.rollback()
         logger.error(f"Error deleting upload {upload_id}: {e}")
         raise HTTPException(status_code=500, detail="Ошибка при удалении записи")
+
+@router.get("/upload/{upload_id}/download-url")
+def get_file_download_url(
+    upload_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Возвращает временную ссылку для скачивания оригинального файла из MinIO."""
+    upload = db.query(Analysis).filter(Analysis.id == upload_id).first()
+
+    if not upload:
+        raise HTTPException(status_code=404, detail="Запись не найдена")
+
+    if current_user.role != "admin" and upload.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="У вас нет доступа к этому файлу")
+
+    if not upload.file_object_name:
+        raise HTTPException(status_code=404, detail="Файл не был сохранён в хранилище")
+
+    if not minio_service:
+        raise HTTPException(status_code=503, detail="Сервис хранилища недоступен")
+
+    try:
+        url = minio_service.get_presigned_url(upload.file_object_name, expires_hours=1)
+        base_name = upload.filename.rsplit(".", 1)[0] if "." in upload.filename else upload.filename
+        report_filename = f"report_{base_name}.pdf"
+        return {"download_url": url, "filename": report_filename}
+    except Exception as e:
+        logger.error(f"Ошибка получения ссылки для скачивания: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка при получении ссылки для скачивания")
 
 @router.post("/analyze-multiple")
 async def analyze_multiple_files(
@@ -684,3 +906,61 @@ async def analyze_screenshots(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=f"Ошибка при анализе скриншотов: {str(e)}")
+
+@router.get("/all-analyses")
+def get_all_analyses(
+    page: int = 1,
+    limit: int = 10,
+    search: str = None,
+    min_score: int = None,
+    max_score: int = None,
+    user_id: int = None,
+    sort_by: str = "created_at",
+    sort_order: str = "desc",
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("admin"))
+):
+    if page < 1: page = 1
+    if limit < 1 or limit > 100: limit = 10
+    if sort_by not in ["created_at", "score", "filename", "user_id"]: sort_by = "created_at"
+    if sort_order not in ["asc", "desc"]: sort_order = "desc"
+    
+    offset = (page - 1) * limit
+    query = db.query(Analysis)
+    
+    if search: query = query.filter(Analysis.filename.ilike(f"%{search}%"))
+    if min_score is not None: query = query.filter(Analysis.score >= min_score)
+    if max_score is not None: query = query.filter(Analysis.score <= max_score)
+    if user_id is not None: query = query.filter(Analysis.user_id == user_id)
+    
+    total = query.count()
+    
+    sort_column = getattr(Analysis, sort_by)
+    query = query.order_by(sort_column.desc() if sort_order == "desc" else sort_column.asc())
+    
+    analyses = query.offset(offset).limit(limit).all()
+    
+    return {
+        "items": [
+            {
+                "id": analysis.id,
+                "user_id": analysis.user_id,
+                "filename": analysis.filename,
+                "score": analysis.score,
+                "created_at": analysis.created_at.isoformat() if analysis.created_at else None
+            }
+            for analysis in analyses
+        ],
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "total_pages": (total + limit - 1) // limit,
+        "filters": {
+            "search": search,
+            "min_score": min_score,
+            "max_score": max_score,
+            "user_id": user_id,
+            "sort_by": sort_by,
+            "sort_order": sort_order
+        }
+    }

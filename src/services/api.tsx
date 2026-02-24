@@ -211,6 +211,52 @@ class ApiService {
     });
     return response.json();
   }
+
+  async getMyUploads(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    min_score?: number;
+    max_score?: number;
+    sort_by?: string;
+    sort_order?: string;
+  } = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+    
+    const response = await this.request(`/my-uploads?${queryParams.toString()}`);
+    return response.json();
+  }
+
+  async getDownloadUrl(uploadId: number): Promise<{ download_url: string; filename: string }> {
+    const response = await this.request(`/upload/${uploadId}/download-url`);
+    return response.json();
+  }
+
+  async getAllAnalyses(params: {
+    page?: number;
+    limit?: number;
+    search?: string;
+    min_score?: number;
+    max_score?: number;
+    user_id?: number;
+    sort_by?: string;
+    sort_order?: string;
+  } = {}) {
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    });
+    
+    const response = await this.request(`/all-analyses?${queryParams.toString()}`);
+    return response.json();
+  }
 }
 
 export const apiService = new ApiService();

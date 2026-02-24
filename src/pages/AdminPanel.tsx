@@ -25,7 +25,6 @@ const AdminPanel: React.FC = () => {
       setError('');
       const data = await apiService.getAllUsers(0, 100);
       setUsers(data);
-      // Инициализируем выбранные роли текущими ролями
       const roleMap: { [key: number]: string } = {};
       data.forEach((user: User) => {
         roleMap[user.id] = user.role;
@@ -42,7 +41,6 @@ const AdminPanel: React.FC = () => {
     try {
       setError('');
       await apiService.updateUserRole(userId, newRole);
-      // Обновляем роль в локальном состоянии
       setSelectedRole({ ...selectedRole, [userId]: newRole });
       setUsers(
         users.map((user) =>

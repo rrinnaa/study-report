@@ -3,10 +3,15 @@ from fastapi.middleware.cors import CORSMiddleware
 import logging
 from .auth import router as auth_router
 from .analyze import router as analyze_router
-from .jwt_middleware import JWTMiddleware 
+from .jwt_middleware import JWTMiddleware
+from .database import run_migrations
 
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Report Analyzer API")
+
+@app.on_event("startup")
+def on_startup():
+    run_migrations()
 
 app.add_middleware(
     JWTMiddleware,
