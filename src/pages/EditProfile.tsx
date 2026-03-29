@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
+import { ROUTES } from '../constants/routes';
 
 interface UserProfile {
   id: number;
@@ -27,7 +28,7 @@ const EditProfile: React.FC = () => {
 
   useEffect(() => {
     const handleLogout = () => {
-      navigate('/auth');
+      navigate(ROUTES.AUTH);
     };
 
     window.addEventListener('logout', handleLogout);
@@ -103,7 +104,7 @@ const EditProfile: React.FC = () => {
 
       if (response.ok) {
         alert('Профиль успешно обновлен');
-        navigate('/');
+        navigate(ROUTES.HOME);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Ошибка сохранения');
@@ -132,7 +133,7 @@ const EditProfile: React.FC = () => {
       if (response.ok) {
         await apiService.logout();
         alert('Профиль успешно удален');
-        navigate('/auth');
+        navigate(ROUTES.AUTH);
       } else {
         const errorData = await response.json();
         throw new Error(errorData.detail || 'Ошибка удаления профиля');
@@ -365,7 +366,7 @@ const EditProfile: React.FC = () => {
 
             <button
               type="button"
-              onClick={() => navigate('/')}
+              onClick={() => navigate(ROUTES.HOME)}
               className="btn"
               style={{ width: '100%', marginBottom: '24px' }}
             >

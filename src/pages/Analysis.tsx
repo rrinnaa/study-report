@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { ROUTES } from '../constants/routes'
 
 interface SectionInfo {
   id: string
@@ -44,7 +45,7 @@ export default function Analysis() {
   useEffect(() => {
     const savedResult = sessionStorage.getItem('analysis_result')
     if (!savedResult) {
-      navigate('/upload')
+      navigate(ROUTES.UPLOAD)
       return
     }
 
@@ -52,7 +53,7 @@ export default function Analysis() {
       const analysisResult: AnalysisResult = JSON.parse(savedResult)
       setResult(analysisResult)
     } catch {
-      navigate('/upload')
+      navigate(ROUTES.UPLOAD)
     } finally {
       setLoading(false)
     }
@@ -62,7 +63,7 @@ export default function Analysis() {
     sessionStorage.removeItem('analysis_result')
     sessionStorage.removeItem('uploaded_file_name')
     sessionStorage.removeItem('uploaded_file_type')
-    navigate('/upload')
+    navigate(ROUTES.UPLOAD)
   }
 
   const formatContentSize = (bytes: number) => {
@@ -84,9 +85,9 @@ export default function Analysis() {
   if (!result) return <div>Ошибка загрузки анализа</div>
 
   return (
-    <div className="analysis" style={{ padding: '16px' }}>
+    <main className="analysis" style={{ padding: '16px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <h2>Результаты анализа</h2>
+        <h1 style={{ margin: 0 }}>Результаты анализа</h1>
         <button className="btn" onClick={handleNewAnalysis}>📊 Новый анализ</button>
       </div>
 
@@ -211,6 +212,6 @@ export default function Analysis() {
           }
         </div>
       </div>
-    </div>
+    </main>
   )
 }

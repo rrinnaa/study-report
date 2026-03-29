@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-label="Study Report Analyzer">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)" />
+  <rect x="80" y="80" width="1040" height="470" rx="24" fill="#ffffff" opacity="0.08" />
+  <text x="110" y="280" fill="#ffffff" font-size="68" font-family="Arial, sans-serif" font-weight="700">
+    Study Report Analyzer
+  </text>
+  <text x="110" y="355" fill="#dbeafe" font-size="34" font-family="Arial, sans-serif">
+    Проверка структуры учебных работ
+  </text>
+</svg>

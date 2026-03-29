@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import React, { useState } from 'react'
 import { apiService } from '../services/api'
+import { ROUTES } from '../constants/routes'
 
 interface AuthProps {
   setIsLoggedIn: React.Dispatch<React.SetStateAction<boolean>>
@@ -53,7 +54,7 @@ export default function Auth({ setIsLoggedIn }: AuthProps) {
       
       localStorage.setItem('user', JSON.stringify(user))
       setIsLoggedIn(true)
-      navigate('/upload')
+      navigate(ROUTES.UPLOAD)
 
     } catch (err: any) {
       setError(err.message || 'Ошибка входа')
@@ -93,7 +94,7 @@ const user = await apiService.register({
       
       localStorage.setItem('user', JSON.stringify(user))
       setIsLoggedIn(true)
-      navigate('/upload')
+      navigate(ROUTES.UPLOAD)
 
     } catch (err: any) {
       setError(err.message || 'Ошибка регистрации')
@@ -110,7 +111,10 @@ const user = await apiService.register({
   }
 
   return (
-    <div className="auth-card">
+    <main className="auth-card" aria-label="Страница авторизации">
+      <h1 className="h1" style={{ marginTop: 0, marginBottom: 14, fontSize: 24 }}>
+        Вход и регистрация
+      </h1>
       <div className="tabs">
         <div
           className={`tab ${tab === 'login' ? 'active' : ''}`}
@@ -271,7 +275,7 @@ const user = await apiService.register({
           {tab === 'login' ? 'Зарегистрируйтесь' : 'Войдите'}
         </span>
       </div>
-    </div>
+    </main>
   )
 }
 

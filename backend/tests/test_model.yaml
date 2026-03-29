@@ -1,0 +1,81 @@
+critical_user_scenarios:
+  - id: auth-session-flow
+    title: Вход/выход и восстановление сессии
+    priority: critical
+    checks:
+      - login returns access/refresh tokens
+      - protected endpoints require bearer token
+      - refresh rotates refresh token
+      - logout invalidates refresh token
+  - id: analyze-upload-flow
+    title: Загрузка файла и получение анализа
+    priority: critical
+    checks:
+      - supported file formats are analyzed
+      - unsupported/empty files return structured errors
+      - analysis result contains score, sections, recommendations
+  - id: role-based-admin-flow
+    title: Управление пользователями по ролям
+    priority: critical
+    checks:
+      - admin can list users and modify roles
+      - non-admin receives 403
+      - self-delete prevention for admin endpoint
+  - id: history-filter-flow
+    title: История загрузок с фильтрацией и пагинацией
+    priority: high
+    checks:
+      - page/limit respected
+      - sort and search filters applied
+      - invalid ranges produce 400 with clear detail
+  - id: file-storage-flow
+    title: Получение ссылки на файл из объектного хранилища
+    priority: high
+    checks:
+      - access restricted by ownership/admin
+      - missing object name returns 404
+      - storage unavailable returns 503
+  - id: external-api-flow
+    title: Получение внешнего совета по учебной работе
+    priority: high
+    checks:
+      - normal API response normalized
+      - retry and fallback on failures
+      - rate limit fallback triggered
+
+business_rules_and_constraints:
+  - id: password-policy
+    rule: Пароль 6-14 символов, минимум одна заглавная буква и одна цифра, только латиница/цифры
+  - id: unique-email
+    rule: Email пользователя уникален
+  - id: token-types
+    rule: Access и refresh токены имеют разные type и разные secret ключи
+  - id: role-guard
+    rule: Admin endpoints доступны только роли admin
+  - id: uploads-validation
+    rule: min_score/max_score должны быть >= 0 и min_score <= max_score
+  - id: uploads-limits
+    rule: limit ограничен на endpoint’ах (my-uploads <= 50, all-analyses <= 100)
+  - id: route-protection-ui
+    rule: Приватные frontend-роуты требуют аутентификацию, admin-роут требует роль admin
+
+risk_areas:
+  authentication:
+    risks:
+      - bypass middleware for non-public paths
+      - stale refresh token accepted
+      - incorrect logout handling on 401
+  roles_permissions:
+    risks:
+      - user can access admin endpoints
+      - cross-user access to upload details/download URLs
+  files_object_storage:
+    risks:
+      - unsupported files break analyzer path
+      - MinIO failures are swallowed without user-level signal
+      - download URLs leaked to unauthorized users
+  api_integrations:
+    risks:
+      - external API timeout/error storm
+      - malformed API payload normalization
+      - retry/rate-limit logic regressions

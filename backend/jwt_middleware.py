@@ -12,7 +12,7 @@ class JWTMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
         
-        if request.method == "OPTIONS" or any(path == p for p in self.public_paths):
+        if request.method == "OPTIONS" or any(path == p or path.startswith(f"{p}/") for p in self.public_paths):
             return await call_next(request)
 
         auth_header = request.headers.get("Authorization")

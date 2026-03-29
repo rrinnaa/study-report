@@ -10,6 +10,7 @@ node_modules/
 
 # Environment
 .env
+backend/.env
 *.db
 
 # IDE
@@ -22,3 +23,7 @@ node_modules/
 # Build
 dist/
 build/
+.coverage
+coverage/
+test-results/
+playwright-report/

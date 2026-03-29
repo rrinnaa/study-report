@@ -1,5 +1,7 @@
 import React, { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { apiService } from '../services/api'
+import { ROUTES } from '../constants/routes'
 
 interface UploadedFile {
   file: File
@@ -18,7 +20,7 @@ export default function Upload() {
 
   React.useEffect(() => {
     const handleLogout = () => {
-      navigate('/auth');
+      navigate(ROUTES.AUTH);
     };
 
     window.addEventListener('logout', handleLogout);
@@ -101,65 +103,6 @@ export default function Upload() {
     }
   }
 
-  const refreshTokens = async (): Promise<boolean> => {
-    const refreshToken = localStorage.getItem('refresh_token')
-    if (!refreshToken) return false
-
-    try {
-      const response = await fetch('http://127.0.0.1:8000/api/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-        }),
-      })
-
-      if (response.ok) {
-        const tokens = await response.json()
-        localStorage.setItem('access_token', tokens.access_token)
-        localStorage.setItem('refresh_token', tokens.refresh_token)
-        return true
-      }
-    } catch (error) {
-      console.error('Token refresh failed:', error)
-    }
-
-    return false
-  }
-
-  const makeRequestWithRetry = async (url: string, formData: FormData): Promise<Response> => {
-    let accessToken = localStorage.getItem('access_token')
-    
-    let response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${accessToken}`
-      },
-      body: formData
-    })
-
-    if (response.status === 401) {
-      const refreshed = await refreshTokens()
-      if (refreshed) {
-        accessToken = localStorage.getItem('access_token')
-        response = await fetch(url, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`
-          },
-          body: formData
-        })
-      } else {
-        window.dispatchEvent(new Event('logout'))
-        throw new Error('Требуется повторная авторизация')
-      }
-    }
-
-    return response
-  }
-
   async function submitAndGo() {
     if (uploadedFiles.length === 0) {
       setError('Сначала выберите файлы.')
@@ -172,10 +115,10 @@ export default function Upload() {
     try {
       const formData = new FormData()
       
-      let url = 'http://127.0.0.1:8000/api/analyze'
+      let url = '/analyze'
       
       if (uploadMode === 'screenshots') {
-        url = 'http://127.0.0.1:8000/api/analyze-screenshots'
+        url = '/analyze-screenshots'
         uploadedFiles.forEach(uploadedFile => {
           formData.append('files', uploadedFile.file)
         })
@@ -183,15 +126,12 @@ export default function Upload() {
         formData.append('file', uploadedFiles[0].file)
       }
 
-      if (selectedWorkType !== 'auto') {
-        url += `?work_type=${selectedWorkType}`
-      }
+      const endpoint = selectedWorkType !== 'auto' ? `${url}?work_type=${selectedWorkType}` : url
       
-      console.log(`Sending files to ${url}...`)
-
-      const response = await makeRequestWithRetry(url, formData)
-
-      console.log('Response status:', response.status)
+      const response = await apiService.request(endpoint, {
+        method: 'POST',
+        body: formData,
+      })
 
       if (!response.ok) {
         const errorText = await response.text()
@@ -199,8 +139,6 @@ export default function Upload() {
       }
 
       const result = await response.json()
-      console.log('Analysis result:', result)
-      
       sessionStorage.setItem('analysis_result', JSON.stringify(result))
       
       if (uploadMode === 'screenshots') {
@@ -211,10 +149,9 @@ export default function Upload() {
       
       sessionStorage.setItem('uploaded_file_type', uploadMode === 'screenshots' ? 'combined_screenshots' : uploadedFiles[0].type)
       
-      navigate('/analysis')
+      navigate(ROUTES.ANALYSIS)
       
     } catch (err: any) {
-      console.error('Upload error:', err)
       setError(err.message || 'Ошибка при анализе файлов')
     } finally {
       setUploading(false)
@@ -244,7 +181,7 @@ export default function Upload() {
 
   const renderFileIcon = (file: UploadedFile) => {
     if (file.preview) {
-      return <img src={file.preview} alt="preview" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8 }} />
+      return <img src={file.preview} alt={`Превью ${file.file.name}`} loading="lazy" style={{ width: 64, height: 64, objectFit: 'cover', borderRadius: 8 }} />
     }
     
     const iconStyle = {
@@ -284,7 +221,7 @@ export default function Upload() {
   }
 
   return (
-    <div style={{ maxWidth: 820, margin: '40px auto' }}>
+    <main style={{ maxWidth: 820, margin: '40px auto' }}>
       <div className="upload-card">
         <h2 className="upload-title">Загрузка отчетов</h2>
         
@@ -490,6 +427,6 @@ export default function Upload() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   )
 }

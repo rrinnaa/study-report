@@ -1,5 +1,5 @@
 class ApiService {
-  private baseURL = 'http://127.0.0.1:8000/api';
+  private baseURL = ((import.meta as ImportMeta & { env?: { VITE_API_URL?: string } }).env?.VITE_API_URL) || '/api';
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private isRefreshing = false;
@@ -34,19 +34,20 @@ class ApiService {
   }
 
   async request(url: string, options: RequestInit = {}) {
-    const isPublicRequest = ['/login', '/register', '/refresh'].includes(url);
+    const isPublicRequest = ['/login', '/register', '/refresh', '/external/study-tip'].includes(url);
     
     if (!this.accessToken && localStorage.getItem('access_token')) {
       this.loadTokens();
     }
     
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    const headers = new Headers(options.headers);
+    const isFormData = options.body instanceof FormData;
+    if (!headers.has('Content-Type') && !isFormData) {
+      headers.set('Content-Type', 'application/json');
+    }
 
     if (!isPublicRequest && this.accessToken) {
-      headers['Authorization'] = `Bearer ${this.accessToken}`;
+      headers.set('Authorization', `Bearer ${this.accessToken}`);
     }
 
     let response = await fetch(`${this.baseURL}${url}`, { ...options, headers });
@@ -55,7 +56,7 @@ class ApiService {
       if (this.isRefreshing) {
         return new Promise<Response>((resolve, reject) => {
           this.refreshSubscribers.push((newToken: string) => {
-            headers['Authorization'] = `Bearer ${newToken}`;
+            headers.set('Authorization', `Bearer ${newToken}`);
             fetch(`${this.baseURL}${url}`, { ...options, headers })
               .then(resolve)
               .catch(reject);
@@ -71,7 +72,7 @@ class ApiService {
           this.refreshSubscribers.forEach(callback => callback(this.accessToken!));
           this.refreshSubscribers = [];
           
-          headers['Authorization'] = `Bearer ${this.accessToken}`;
+          headers.set('Authorization', `Bearer ${this.accessToken}`);
           response = await fetch(`${this.baseURL}${url}`, { ...options, headers });
         } else {
           this.clearTokens();
@@ -255,6 +256,11 @@ class ApiService {
     });
     
     const response = await this.request(`/all-analyses?${queryParams.toString()}`);
+    return response.json();
+  }
+
+  async getStudyTip(): Promise<{ tip: string; source: string; is_fallback: boolean }> {
+    const response = await this.request('/external/study-tip');
     return response.json();
   }
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { apiService } from '../services/api';
+import { ROUTES } from '../constants/routes';
 
 interface Upload {
   id: number;
@@ -123,14 +124,14 @@ const MyUploads: React.FC = () => {
       sessionStorage.setItem('analysis_result', JSON.stringify(fullResult));
       sessionStorage.setItem('uploaded_file_name', upload?.filename || '');
       
-      navigate('/analysis');
+      navigate(ROUTES.ANALYSIS);
     } catch (err: any) {
       alert('Ошибка при загрузке деталей анализа: ' + err.message);
     }
   };
 
   useEffect(() => {
-    const handleLogout = () => navigate('/auth');
+    const handleLogout = () => navigate(ROUTES.AUTH);
     window.addEventListener('logout', handleLogout);
     return () => window.removeEventListener('logout', handleLogout);
   }, [navigate]);
@@ -226,7 +227,7 @@ const MyUploads: React.FC = () => {
         <p className="lead" style={{ marginBottom: '30px' }}>Загрузите свой первый документ для анализа</p>
         <button 
           className="btn btn-primary btn-large"
-          onClick={() => navigate('/upload')} 
+          onClick={() => navigate(ROUTES.UPLOAD)} 
         >
           Загрузить документ
         </button>

@@ -205,13 +205,13 @@ def generate_report_pdf(analysis_result: dict, user_full_name: str) -> bytes:
     font_bold = "DejaVuSans-Bold" if _cyrillic_font_available() else "Helvetica-Bold"
 
     styles = getSampleStyleSheet()
-    style_title = ParagraphStyle("Title", fontName=font_bold, fontSize=16, spaceAfter=6, textColor=colors.HexColor("#1e293b"))
-    style_subtitle = ParagraphStyle("Subtitle", fontName=font_name, fontSize=11, spaceAfter=4, textColor=colors.HexColor("#64748b"))
-    style_section = ParagraphStyle("Section", fontName=font_bold, fontSize=12, spaceBefore=12, spaceAfter=4, textColor=colors.HexColor("#334155"))
-    style_body = ParagraphStyle("Body", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#1e293b"), leading=14)
-    style_ok = ParagraphStyle("Ok", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#16a34a"), leading=14)
-    style_err = ParagraphStyle("Err", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#dc2626"), leading=14)
-    style_warn = ParagraphStyle("Warn", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#d97706"), leading=14)
+    style_title = ParagraphStyle("ReportTitle", fontName=font_bold, fontSize=16, spaceAfter=6, textColor=colors.HexColor("#1e293b"))
+    style_subtitle = ParagraphStyle("ReportSubtitle", fontName=font_name, fontSize=11, spaceAfter=4, textColor=colors.HexColor("#64748b"))
+    style_section = ParagraphStyle("ReportSection", fontName=font_bold, fontSize=12, spaceBefore=12, spaceAfter=4, textColor=colors.HexColor("#334155"))
+    style_body = ParagraphStyle("ReportBody", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#1e293b"), leading=14)
+    style_ok = ParagraphStyle("ReportOk", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#16a34a"), leading=14)
+    style_err = ParagraphStyle("ReportErr", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#dc2626"), leading=14)
+    style_warn = ParagraphStyle("ReportWarn", fontName=font_name, fontSize=10, spaceAfter=3, textColor=colors.HexColor("#d97706"), leading=14)
 
     score = analysis_result.get("score", 0)
     score_color = colors.HexColor("#16a34a") if score >= 80 else (colors.HexColor("#d97706") if score >= 60 else colors.HexColor("#dc2626"))
@@ -224,7 +224,7 @@ def generate_report_pdf(analysis_result: dict, user_full_name: str) -> bytes:
     story.append(Paragraph(f"Дата: {datetime.utcnow().strftime('%d.%m.%Y %H:%M')} UTC", style_subtitle))
     story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e2e8f0"), spaceAfter=8))
 
-    score_style = ParagraphStyle("Score", fontName=font_bold, fontSize=28, textColor=score_color, spaceAfter=2)
+    score_style = ParagraphStyle("ReportScore", fontName=font_bold, fontSize=28, textColor=score_color, spaceAfter=2)
     story.append(Paragraph(f"Итоговый балл: {score}/100", score_style))
     work_type = analysis_result.get("workType", "Не определён")
     story.append(Paragraph(f"Тип работы: {work_type}", style_body))
@@ -301,19 +301,37 @@ def generate_report_pdf(analysis_result: dict, user_full_name: str) -> bytes:
 def _register_cyrillic_font():
     """Регистрирует шрифт с поддержкой кириллицы, если доступен."""
     try:
-        font_paths = [
+        from reportlab.pdfbase.pdfmetrics import registerFontFamily
+
+        font_paths_regular = [
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/System/Library/Fonts/Supplemental/Arial.ttf",
             "/Library/Fonts/Arial.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
         ]
-        regular = next((p for p in font_paths if os.path.exists(p) and "Bold" not in p), None)
-        bold = next((p for p in font_paths if os.path.exists(p) and "Bold" in p), None)
+        font_paths_bold = [
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+            "/Library/Fonts/Arial Bold.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        ]
+
+        regular = next((p for p in font_paths_regular if os.path.exists(p)), None)
+        bold = next((p for p in font_paths_bold if os.path.exists(p)), None)
 
         if regular:
             pdfmetrics.registerFont(TTFont("DejaVuSans", regular))
         if bold:
             pdfmetrics.registerFont(TTFont("DejaVuSans-Bold", bold))
+
+        if regular and bold:
+            registerFontFamily(
+                "DejaVuSans",
+                normal="DejaVuSans",
+                bold="DejaVuSans-Bold",
+                italic="DejaVuSans",
+                boldItalic="DejaVuSans-Bold",
+            )
     except Exception:
         pass
 

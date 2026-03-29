@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api'; 
+import { ROUTES } from '../constants/routes';
 
 interface HeaderProps {
   isLoggedIn: boolean;
@@ -36,7 +37,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
     const handleSystemLogout = () => {
       setIsLoggedIn(false);
       setUserProfile(null);
-      navigate('/auth');
+      navigate(ROUTES.AUTH);
     };
 
     window.addEventListener('logout', handleSystemLogout);
@@ -74,7 +75,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
       setIsLoggedIn(false);
       setUserProfile(null);
       setShowProfileMenu(false);
-      navigate('/');
+      navigate(ROUTES.HOME);
     }
   };
 
@@ -103,24 +104,24 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '0 0 auto', marginLeft: 'auto' }}>
-          <button style={btnStyle} onClick={() => navigate('/')}>Главная</button>
+          <button style={btnStyle} onClick={() => navigate(ROUTES.HOME)}>Главная</button>
           {isLoggedIn && (
             <>
-              <button style={btnStyle} onClick={() => navigate('/upload')}>
+              <button style={btnStyle} onClick={() => navigate(ROUTES.UPLOAD)}>
                 Загрузить
               </button>
-              <button style={btnStyle} onClick={() => navigate('/my-uploads')}>
+              <button style={btnStyle} onClick={() => navigate(ROUTES.MY_UPLOADS)}>
                 Мои загрузки
               </button>
               {userProfile?.role === 'admin' && (
-                <button style={btnStyle} onClick={() => navigate('/admin')}>
+                <button style={btnStyle} onClick={() => navigate(ROUTES.ADMIN)}>
                   Админ панель
                 </button>
               )}
             </>
           )}
           {!isLoggedIn ? (
-            <button style={btnStyle} onClick={() => navigate('/auth')}>
+            <button style={btnStyle} onClick={() => navigate(ROUTES.AUTH)}>
               Вход / Регистрация
             </button>
           ) : (
@@ -197,7 +198,7 @@ const Header: React.FC<HeaderProps> = ({ isLoggedIn, setIsLoggedIn }) => {
                       }}
                       onClick={() => {
                         setShowProfileMenu(false);
-                        navigate('/edit-profile');
+                        navigate(ROUTES.EDIT_PROFILE);
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = '#f3f4f6';

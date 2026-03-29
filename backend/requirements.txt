@@ -14,3 +14,4 @@ pillow==10.1.0
 email-validator==2.1.1
 minio==7.2.7
 reportlab==4.2.2
+httpx==0.24.1

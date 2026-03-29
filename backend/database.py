@@ -31,7 +31,7 @@ class Analysis(Base):
     filename = Column(String, nullable=False)
     score = Column(Integer, default=0)
     user = relationship("User", back_populates="analyses")
-    full_result = Column(JSONB, nullable=True)
+    full_result = Column(JSON().with_variant(JSONB, "postgresql"), nullable=True)
     file_object_name = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
